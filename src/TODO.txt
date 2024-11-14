@@ -1,0 +1,29 @@
+void      esp_netif_action_start( void * esp_netif, esp_event_base_t base, int32_t event_id, void * data );
+void      esp_netif_action_stop( void * esp_netif, esp_event_base_t base, int32_t event_id, void * data );
+void      esp_netif_action_connected( void * esp_netif, esp_event_base_t base, int32_t event_id, void * data );
+void      esp_netif_action_disconnected( void * esp_netif, esp_event_base_t base, int32_t event_id, void * data );
+void      esp_netif_action_got_ip( void * esp_netif, esp_event_base_t base, int32_t event_id, void * data );
+void      esp_netif_action_join_ip6_multicast_group( void *           esp_netif,
+                                                     esp_event_base_t base,
+                                                     int32_t          event_id,
+                                                     void *           data );
+void      esp_netif_action_leave_ip6_multicast_group( void *           esp_netif,
+                                                      esp_event_base_t base,
+                                                      int32_t          event_id,
+                                                      void *           data );
+void      esp_netif_action_add_ip6_address( void * esp_netif, esp_event_base_t base, int32_t event_id, void * data );
+void      esp_netif_action_remove_ip6_address( void * esp_netif, esp_event_base_t base, int32_t event_id, void * data );
+void      esp_netif_set_ip4_addr( esp_ip4_addr_t * addr, uint8_t a, uint8_t b, uint8_t c, uint8_t d );
+char *    esp_ip4addr_ntoa( const esp_ip4_addr_t * addr, char * buf, int buflen );
+uint32_t  esp_ip4addr_aton( const char * addr );
+esp_err_t esp_netif_str_to_ip4( const char * src, esp_ip4_addr_t * dst );
+esp_err_t esp_netif_str_to_ip6( const char * src, esp_ip6_addr_t * dst );
+esp_netif_t * esp_netif_get_handle_from_ifkey( const char * if_key );
+typedef bool ( *esp_netif_find_predicate_t )( esp_netif_t * netif, void * ctx );
+esp_netif_t * esp_netif_find_if( esp_netif_find_predicate_t fn, void * ctx );
+size_t        esp_netif_get_nr_of_ifs( void );
+void          esp_netif_netstack_buf_ref( void * netstack_buf );
+void          esp_netif_netstack_buf_free( void * netstack_buf );
+typedef esp_err_t ( *esp_netif_callback_fn )( void * ctx );
+esp_err_t esp_netif_tcpip_exec( esp_netif_callback_fn fn, void * ctx );
+

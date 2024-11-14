@@ -1,0 +1,12 @@
+CompileFlags:
+  QueryDriver: /home/safocl/.espressif/tools/xtensa-esp-elf/esp-13.2.0_20240530/xtensa-esp-elf/bin/xtensa-esp32-elf-g++
+  Remove: [-fno-shrink-wrap, -mlongcalls, -fstrict-volatile-bitfields, -fno-tree-switch-conversion]
+  Add:
+  - --target=xtensa-esp-elf
+  - -mcpu=esp32
+  - -ferror-limit=0
+  - -I/home/safocl/.espressif/tools/xtensa-esp-elf/esp-13.2.0_20240530/xtensa-esp-elf/xtensa-esp-elf/include
+  - -I/home/safocl/.espressif/tools/xtensa-esp-elf/esp-13.2.0_20240530/xtensa-esp-elf/xtensa-esp-elf/include/c++/13.2.0
+  - -I/home/safocl/.espressif/tools/xtensa-esp-elf/esp-13.2.0_20240530/xtensa-esp-elf/xtensa-esp-elf/include/c++/13.2.0/xtensa-esp-elf/esp32
+
+  Compiler: /home/safocl/.espressif/tools/xtensa-esp-elf/esp-13.2.0_20240530/xtensa-esp-elf/bin/xtensa-esp32-elf-g++
