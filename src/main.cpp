@@ -113,6 +113,7 @@ extern "C" int app_main() {
 
                 osc1.setTransferProtocol( TransferProtocol::create( endpoint ) );
 
+                // osc1.stop();
                 osc1.start();
                 std::print( "-------Endpoint: {}:{} added.\n", endpoint.address().to_string(), endpoint.port() );
 

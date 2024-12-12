@@ -2,10 +2,10 @@
 
 #include <bit>
 #include <chrono>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <functional>
 #include <memory>
 #include <new>
 #include <ranges>
@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <stop_token>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -20,6 +21,7 @@
 #include "connect.hpp"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_continuous.h"
+#include "gpio_cxx.hpp"
 #include "hal/adc_types.h"
 #include "print"
 #include "system_cxx.hpp"
@@ -44,6 +46,11 @@
   *    adc_continuous_callback_t on_pool_ovf
   *        Event callback, invoked when the internal pool is full.
    */
+
+constexpr auto asLeastNearestMultiple( std::integral auto lowestThreshold, std::integral auto n )
+-> std::common_type_t< decltype( lowestThreshold ), decltype( n ) > {
+    return ( ( lowestThreshold + n - 1 ) / n ) * n;
+}
 
 namespace Osc {
 
@@ -143,11 +150,15 @@ private:
     // }
 
     constexpr std::uint32_t nearestBytes( std::uint32_t leastSamples ) noexcept {
-        auto bytes = leastSamples * Adc::Caps::digiResultBytes;
-        if ( bytes % Adc::Caps::digiDataBytesPerConv )
-            bytes = ( ( bytes + Adc::Caps::digiDataBytesPerConv ) / Adc::Caps::digiDataBytesPerConv ) *
-                    Adc::Caps::digiDataBytesPerConv;
-        return bytes;
+        // auto bytes = leastSamples * Adc::Caps::digiResultBytes;
+        // if ( bytes % Adc::Caps::digiDataBytesPerConv )
+        //     bytes = ( ( bytes + Adc::Caps::digiDataBytesPerConv ) / Adc::Caps::digiDataBytesPerConv ) *
+        //             Adc::Caps::digiDataBytesPerConv;
+
+        // bytes = ( bytes / Adc::Caps::digiDataBytesPerConv ) * Adc::Caps::digiDataBytesPerConv +
+        //         bool( bytes % Adc::Caps::digiDataBytesPerConv ) * Adc::Caps::digiDataBytesPerConv;
+
+        return asLeastNearestMultiple( leastSamples * Adc::Caps::digiResultBytes, Adc::Caps::digiDataBytesPerConv );
     }
 
     std::jthread cbThread;
@@ -161,36 +172,34 @@ private:
     std::uint32_t mSamplesPerPocket { nearestBytes( 512 ) / Adc::Caps::digiResultBytes };
     std::uint32_t mBytesPerPocket { nearestBytes( mSamplesPerPocket ) };
 
-    AdcHandler mAdc = core::Periph::Adc::createContinuous( { .max_store_buf_size = mBytesPerPocket * 4,
-                                                             .conv_frame_size    = mBytesPerPocket,
-                                                             .flags              = { .flush_pool = true } } );
+    idf::GPIONum mSignal { 36 };
+    idf::GPIONum mVirtCommon { 39 };
 
-    std::vector< adc_digi_pattern_config_t > mDigiPatterns { adc_digi_pattern_config_t {
-    static_cast< std::uint8_t >( adc_atten_t::ADC_ATTEN_DB_12 ),
-    static_cast< std::uint8_t >( adc_channel_t::ADC_CHANNEL_0 ),
-    static_cast< std::uint8_t >( adc_unit_t::ADC_UNIT_1 ),
-    static_cast< std::uint8_t >( adc_bitwidth_t::ADC_BITWIDTH_12 ) } };
+    std::vector< adc_digi_pattern_config_t > mDigiPatterns {
+        adc_digi_pattern_config_t { static_cast< std::uint8_t >( adc_atten_t::ADC_ATTEN_DB_12 ),
+                                    static_cast< std::uint8_t >( Adc::Continuous::ioToChannel( mSignal ).channel ),
+                                    static_cast< std::uint8_t >( Adc::Continuous::ioToChannel( mSignal ).unit ),
+                                    static_cast< std::uint8_t >( adc_bitwidth_t::ADC_BITWIDTH_12 ) },
+        adc_digi_pattern_config_t { static_cast< std::uint8_t >( adc_atten_t::ADC_ATTEN_DB_12 ),
+                                    static_cast< std::uint8_t >( Adc::Continuous::ioToChannel( mVirtCommon ).channel ),
+                                    static_cast< std::uint8_t >( Adc::Continuous::ioToChannel( mVirtCommon ).unit ),
+                                    static_cast< std::uint8_t >( adc_bitwidth_t::ADC_BITWIDTH_12 ) }
+    };
+
+    AdcHandler mAdc =
+    core::Periph::Adc::createContinuous( { .max_store_buf_size = mBytesPerPocket * 4 * mDigiPatterns.size(),
+                                           .conv_frame_size    = mBytesPerPocket * mDigiPatterns.size(),
+                                           .flags              = { .flush_pool = true } } );
 
     std::shared_ptr< Connect::TransferProtocol > mNetProto { nullptr };
 
     BitsPerElement mBpe { e16bit };
     std::uint8_t   mDpe { 12 };
 
-    std::vector< std::byte >     mData   = std::vector< std::byte >( mBytesPerPocket );
-    std::vector< std::uint16_t > mValues = std::vector< std::uint16_t >( mSamplesPerPocket );
+    std::vector< adc_digi_output_data_t > mData =
+    std::vector< adc_digi_output_data_t >( mSamplesPerPocket * mDigiPatterns.size() );
 
-    // void onRead() {
-    //     mAdc.read( data, std::chrono::milliseconds( ADC_MAX_DELAY ) );
-    //
-    //     mNetProto->write( data, [ this ]( asio::error_code ec, std::size_t transfered ) {
-    //         if ( ec )
-    //             std::print( "------ASIO Error {} !!!\n", ec.message() );
-    //         else {
-    //             std::print( "-------Transfered {} bytes.\n", transfered );
-    //             onRead();
-    //         }
-    //     } );
-    // }
+    std::vector< std::int16_t > mValues = std::vector< std::int16_t >( mSamplesPerPocket );
 };
 
 inline void Oscilloscope::start() {
@@ -208,16 +217,10 @@ inline void Oscilloscope::start() {
 
         using core::Periph::AdcCali;
 
-        auto const                     digPattern = mDigiPatterns.front();
-        adc_cali_line_fitting_config_t caliConf { .unit_id      = static_cast< adc_unit_t >( digPattern.unit ),
-                                                  .atten        = static_cast< adc_atten_t >( digPattern.atten ),
-                                                  .bitwidth     = static_cast< adc_bitwidth_t >( digPattern.bit_width ),
-                                                  .default_vref = 0 };
-
         switch ( AdcCali::schemeLineFittingCheckEfuse() ) {
         case ADC_CALI_LINE_FITTING_EFUSE_VAL_DEFAULT_VREF:
-            caliConf.default_vref = 3300;
             std::print( "----ADC_CALI_LINE_FITTING_EFUSE_VAL_DEFAULT_VREF----\n" );
+            assert( false && "TODO" );
             break;
         case ADC_CALI_LINE_FITTING_EFUSE_VAL_EFUSE_TP:
             std::print( "----ADC_CALI_LINE_FITTING_EFUSE_VAL_EFUSE_TP----\n" );
@@ -227,9 +230,25 @@ inline void Oscilloscope::start() {
             break;
         };
 
-        auto caliHandler = AdcCali::create( std::move( caliConf ) );
+#if 0
+        std::vector< decltype( AdcCali::create( adc_cali_line_fitting_config_t {} ) ) > caliHandlers;
+        for ( auto const pattern : mDigiPatterns )
+            caliHandlers.emplace_back( AdcCali::create( { static_cast< adc_unit_t >( pattern.unit ),
+                                                          static_cast< adc_atten_t >( pattern.atten ),
+                                                          static_cast< adc_bitwidth_t >( pattern.bit_width ),
+                                                          0 } ) );
+#else
+        auto caliHandler = AdcCali::create(
+        adc_cali_line_fitting_config_t { static_cast< adc_unit_t >( mDigiPatterns.at( 0 ).unit ),
+                                         static_cast< adc_atten_t >( mDigiPatterns.at( 0 ).atten ),
+                                         static_cast< adc_bitwidth_t >( mDigiPatterns.at( 0 ).bit_width ),
+                                         0 } );
+#endif
 
-        std::span< std::byte > dataSpan { mData };
+        std::span dataSpan( mData );
+
+        const auto sigChannel  = mDigiPatterns[ 0 ].channel;
+        const auto vcomChannel = mDigiPatterns[ 1 ].channel;
 
         while ( !token.stop_requested() ) {
             try {
@@ -238,19 +257,33 @@ inline void Oscilloscope::start() {
                     std::this_thread::sleep_for( 1s );
 
                 const auto resultNum =
-                mAdc.read( dataSpan, std::chrono::milliseconds( ADC_MAX_DELAY ) ) / Adc::Caps::digiResultBytes;
+                mAdc.read( std::as_writable_bytes( dataSpan ), std::chrono::milliseconds( ADC_MAX_DELAY ) ) /
+                Adc::Caps::digiResultBytes;
 
-                // std::span< adc_digi_output_data_t > digiSpan ( dataSpan );
+                auto digiesSig = dataSpan | std::views::as_const | std::views::filter( [ sigChannel ]( auto & el ) {
+                                     return el.type1.channel == sigChannel;
+                                 } );
 
-                const std::span< const adc_digi_output_data_t > digies(
-                reinterpret_cast< const adc_digi_output_data_t * >( dataSpan.data() ), resultNum );
+                auto digiesVcom = dataSpan | std::views::as_const | std::views::filter( [ vcomChannel ]( auto & el ) {
+                                      return el.type1.channel == vcomChannel;
+                                  } );
 
-                const std::span< std::uint16_t > values( mValues.begin(), resultNum );
+                // const std::span values( mValues.begin(), resultNum );
 
-                auto itVal = values.begin();
-                for ( auto & v : digies ) {
-                    *itVal = caliHandler.rawToVoltage( v.type1.data );
-                    ++itVal;
+                auto sigIt  = digiesSig.begin();
+                auto vcomIt = digiesVcom.begin();
+
+                std::span values( mValues.begin(), resultNum / 2 );
+                for ( decltype( auto ) v : values ) {
+#if 1
+                    v = static_cast< std::int16_t >( caliHandler.rawToVoltage( sigIt->type1.data ) -
+                                                     caliHandler.rawToVoltage( vcomIt->type1.data ) );
+#else
+                    v = static_cast< std::int16_t >( caliHandler.rawToVoltage(
+                    static_cast< int >( sigIt->type1.data ) - static_cast< int >( vcomIt->type1.data ) ) );
+#endif
+                    sigIt++;
+                    vcomIt++;
                 }
 #if 0
                 mNetProto->write( dataSpan, []( asio::error_code ec, std::size_t transfered ) {

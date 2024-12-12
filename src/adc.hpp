@@ -2,6 +2,8 @@
 
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
+#include "gpio_cxx.hpp"
+#include "hal/adc_types.h"
 #include <chrono>
 #include <concepts>
 #include <cstddef>
@@ -58,6 +60,11 @@ public:
     #error The size of RESULT is not 2 bytes.
 #endif
 
+    struct ChannelInfo final {
+        adc_unit_t    unit;
+        adc_channel_t channel;
+    };
+
     struct OneShot final {
         friend class Adc;
 
@@ -84,6 +91,20 @@ public:
         ~OneShot() { Deleter()( mHandle ); }
 
         ValueType getOneShotValue();
+
+        static ChannelInfo ioToChannel( idf::GPIONum pin ) {
+            ChannelInfo ret;
+            CHECK_THROW( adc_continuous_io_to_channel( pin.get_value(), &ret.unit, &ret.channel ) );
+
+            return ret;
+        }
+
+        static idf::GPIONum channelToIo( const ChannelInfo & info ) {
+            int ret;
+            CHECK_THROW( adc_continuous_channel_to_io( info.unit, info.channel, &ret ) );
+
+            return idf::GPIONum( ret );
+        }
 
     private:
         Handle mHandle;
@@ -159,6 +180,20 @@ public:
         }
 
         void flushPool() { adc_continuous_flush_pool( mHandle ); }
+
+        static ChannelInfo ioToChannel( idf::GPIONum pin ) {
+            ChannelInfo ret;
+            CHECK_THROW( adc_continuous_io_to_channel( pin.get_value(), &ret.unit, &ret.channel ) );
+
+            return ret;
+        }
+
+        static idf::GPIONum channelToIo( const ChannelInfo & info ) {
+            int ret;
+            CHECK_THROW( adc_continuous_channel_to_io( info.unit, info.channel, &ret ) );
+
+            return idf::GPIONum( ret );
+        }
 
     private:
         Handle mHandle;
