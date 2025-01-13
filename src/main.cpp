@@ -14,11 +14,14 @@
 #include <memory>
 #include <print>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <vector>
 
 using Connect::Wifi;
 using Connect::TransferProtocol;
+using Connect::IpV4;
+using Connect::Port;
 
 extern "C" int app_main() {
     try {
@@ -29,8 +32,8 @@ extern "C" int app_main() {
         wifi_pmf_config_t pfm {};
         pfm.required = true;
 
-        constexpr std::string_view ssid( "esp32osc" );
-        constexpr std::string_view passwd( "esp32osc" );
+        static constexpr std::string_view ssid( "esp32osc" );
+        static constexpr std::string_view passwd( "esp32osc" );
 
         wifi_ap_config_t apConf {};
         std::ranges::copy( ssid, &apConf.ssid[ 0 ] );
@@ -40,55 +43,32 @@ extern "C" int app_main() {
         apConf.max_connection = 5;
         apConf.pmf_cfg        = pfm;
 
-        wifi_config_t             cfg = { .ap = apConf };
+        wifi_config_t cfg = { .ap = apConf };
+
         static core::NetIfHandler wifiIfHandler =
         Wifi::createDefaultWithHandler< Connect::ApProvider >( cfg, Wifi::Storage::eRam );
 
         if ( !bool( wifiIfHandler.getFlags() & ESP_NETIF_DHCP_SERVER ) )
             throw std::runtime_error( "DHCP flag not selected.!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" );
 
-        eventregs.push_back(
-        loop.register_event( idf::event::ESPEvent( IP_EVENT, idf::event::ESPEventID( ESP_NETIF_IP_EVENT_GOT_IP ) ),
-                             []( const idf::event::ESPEvent &, void * params ) {
-                                 auto evt = reinterpret_cast< ip_event_got_ip_t * >( params );
-                                 std::print( "-------Got IP: {}.{}.{}.{}\n",
-                                             esp_ip4_addr1_16( &evt->ip_info.ip ),
-                                             esp_ip4_addr2_16( &evt->ip_info.ip ),
-                                             esp_ip4_addr3_16( &evt->ip_info.ip ),
-                                             esp_ip4_addr4_16( &evt->ip_info.ip ) );
-                             } ) );
-
         Wifi::start();
         Wifi::setMaxTxPower( 8 );
 
-        esp_netif_ip_info_t ipInfo {};
-        IP4_ADDR( &ipInfo.ip, 192, 168, 88, 1 );
-        IP4_ADDR( &ipInfo.netmask, 255, 255, 255, 0 );
-        IP4_ADDR( &ipInfo.gw, 192, 168, 88, 1 );
+        esp_netif_ip_info_t ipInfo { .ip      = IpV4( "192.168.88.1" ),
+                                     .netmask = IpV4( "255.255.255.0" ),
+                                     .gw      = IpV4( "192.168.88.1" ) };
 
-        std::print( "Setted IP: {}.{}.{}.{}\n",
-                    esp_ip4_addr1_16( &ipInfo.ip ),
-                    esp_ip4_addr2_16( &ipInfo.ip ),
-                    esp_ip4_addr3_16( &ipInfo.ip ),
-                    esp_ip4_addr4_16( &ipInfo.ip ) );
+        std::println( "Setted IP: {}", to_string( IpV4( ipInfo.ip ) ) );
 
         wifiIfHandler.dhcpsStop();
         wifiIfHandler.setIpInfo( ipInfo );
         wifiIfHandler.dhcpsStart();
 
         const auto currentIpInfo = wifiIfHandler.getIpInfo();
-        std::print( "Current IP: {}.{}.{}.{}\n",
-                    esp_ip4_addr1_16( &currentIpInfo.ip ),
-                    esp_ip4_addr2_16( &currentIpInfo.ip ),
-                    esp_ip4_addr3_16( &currentIpInfo.ip ),
-                    esp_ip4_addr4_16( &currentIpInfo.ip ) );
+        std::println( "Current IP: {}", to_string( IpV4( currentIpInfo.ip ) ) );
 
         const auto oldIpInfo = wifiIfHandler.getOldIpInfo();
-        std::print( "Old IP: {}.{}.{}.{}\n",
-                    esp_ip4_addr1_16( &oldIpInfo.ip ),
-                    esp_ip4_addr2_16( &oldIpInfo.ip ),
-                    esp_ip4_addr3_16( &oldIpInfo.ip ),
-                    esp_ip4_addr4_16( &oldIpInfo.ip ) );
+        std::println( "Old IP: {}", to_string( IpV4( oldIpInfo.ip ) ) );
 
         while ( wifiIfHandler.dhcpsGetStatus() != ESP_NETIF_DHCP_STARTED ) {
             std::print( "WAIT FOR DHCPS STARTED !!!\n" );
@@ -102,20 +82,18 @@ extern "C" int app_main() {
         idf::event::ESPEvent( IP_EVENT, idf::event::ESPEventID( IP_EVENT_AP_STAIPASSIGNED ) ),
         []( const idf::event::ESPEvent &, void * params ) {
             try {
-                auto       evt = reinterpret_cast< ip_event_ap_staipassigned_t * >( params );
-                const auto ip  = evt->ip;
+                auto evt = reinterpret_cast< ip_event_ap_staipassigned_t * >( params );
 
-                asio::ip::tcp::endpoint endpoint {
-                    asio::ip::make_address_v4( asio::ip::address_v4::bytes_type {
-                    esp_ip4_addr1( &ip ), esp_ip4_addr2( &ip ), esp_ip4_addr3( &ip ), esp_ip4_addr4( &ip ) } ),
-                    8881
-                };
+                const auto     connIp   = IpV4( evt->ip );
+                constexpr auto connPort = Port( 8881 );
 
-                osc1.setTransferProtocol( TransferProtocol::create( endpoint ) );
+                constexpr auto localIp   = IpV4( "127.0.0.1" );
+                constexpr auto localPort = Port( 8882 );
 
-                // osc1.stop();
+                osc1.stop( true );
+                osc1.setTransferProtocol( TransferProtocol::create( connIp, connPort, localIp, localPort ) );
                 osc1.start();
-                std::print( "-------Endpoint: {}:{} added.\n", endpoint.address().to_string(), endpoint.port() );
+                std::print( "-------Endpoint: {}:{} added.\n", to_string( connIp ), to_string( connPort ) );
 
             } catch ( const std::exception & e ) { std::print( "-------Endpoint event handler: {}\n", e.what() ); }
         } ) );

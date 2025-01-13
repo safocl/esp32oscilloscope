@@ -94,14 +94,14 @@ public:
 
         static ChannelInfo ioToChannel( idf::GPIONum pin ) {
             ChannelInfo ret;
-            CHECK_THROW( adc_continuous_io_to_channel( pin.get_value(), &ret.unit, &ret.channel ) );
+            CHECK_THROW( adc_oneshot_io_to_channel( pin.get_value(), &ret.unit, &ret.channel ) );
 
             return ret;
         }
 
         static idf::GPIONum channelToIo( const ChannelInfo & info ) {
             int ret;
-            CHECK_THROW( adc_continuous_channel_to_io( info.unit, info.channel, &ret ) );
+            CHECK_THROW( adc_oneshot_channel_to_io( info.unit, info.channel, &ret ) );
 
             return idf::GPIONum( ret );
         }
@@ -116,6 +116,11 @@ public:
         using InitConfig    = adc_continuous_handle_cfg_t;
         using VariantConfig = adc_continuous_config_t;
         using Handle        = adc_continuous_handle_t;
+
+        struct ReadInfo final {
+            std::uint32_t bytes;
+            std::uint32_t resultNum;
+        };
 
     private:
         struct Construct final {
@@ -168,7 +173,7 @@ public:
         void start() const { CHECK_THROW( adc_continuous_start( mHandle ) ); }
         void stop() const { CHECK_THROW( adc_continuous_stop( mHandle ) ); }
 
-        std::uint32_t read( std::span< ValueType > buf, std::chrono::milliseconds timeOut ) const {
+        ReadInfo read( std::span< ValueType > buf, std::chrono::milliseconds timeOut ) const {
             std::uint32_t realReadSize;
             CHECK_THROW( adc_continuous_read( mHandle,
                                               reinterpret_cast< std::uint8_t * >( buf.data() ),
@@ -176,7 +181,7 @@ public:
                                               &realReadSize,
                                               timeOut.count() ) );
 
-            return realReadSize;
+            return { realReadSize, realReadSize / Adc::Caps::digiResultBytes };
         }
 
         void flushPool() { adc_continuous_flush_pool( mHandle ); }

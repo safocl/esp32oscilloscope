@@ -1,6 +1,6 @@
 CompileFlags:
   QueryDriver: /home/safocl/.espressif_latest/tools/xtensa-esp-elf/esp-14.2.0_20240906/xtensa-esp-elf/bin/xtensa-esp32-elf-g++
-  Remove: [-fno-shrink-wrap, -mlongcalls, -fstrict-volatile-bitfields, -fno-tree-switch-conversion]
+  Remove: [-Wno-unused-includes -fno-shrink-wrap, -mlongcalls, -fstrict-volatile-bitfields, -fno-tree-switch-conversion]
   Add:
   - --target=xtensa-esp-elf
   - -mcpu=esp32
@@ -10,3 +10,6 @@ CompileFlags:
   - -I/home/safocl/.espressif_latest/tools/xtensa-esp-elf/esp-14.2.0_20240906/xtensa-esp-elf/xtensa-esp-elf/include/c++/14.2.0/xtensa-esp-elf/esp32
 
   Compiler: /home/safocl/.espressif_latest/tools/xtensa-esp-elf/esp-14.2.0_20240906/xtensa-esp-elf/bin/xtensa-esp32-elf-g++
+
+Diagnostics:
+  UnusedIncludes: None
