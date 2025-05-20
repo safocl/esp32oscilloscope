@@ -70,7 +70,7 @@ struct SamplingRateRequest final {
 
 struct SamplesPerPocketRequest final {
     std::array< std::byte, 1 > type;
-    std::array< std::byte, 4 > rateHz;
+    std::array< std::byte, 4 > samplesNum;
 };
 
 inline constexpr auto MAX_SIZE_RX = maxSizeOfTypes< SamplingRateRequest, SamplesPerPocketRequest >();
@@ -120,6 +120,8 @@ public:
         if ( mIsRunning )
             mAdc.stop();
 
+        mIsRunning = false;
+
         if ( stopReciever && mRecieverThread.joinable() ) {
             mRecieverThread.request_stop();
             mRecieverThread.join();
@@ -141,6 +143,8 @@ public:
     OscInfo getInfo() const { return { mNetProto, /*mBpe, mDpe*/ }; }
 
 private:
+    // NOTE: for history...
+    //
     // constexpr std::uint32_t nearestSamples( std::uint32_t leastSamples ) noexcept {
     //     // auto samples = mSamplesPerPocket * Adc::Caps::digiResultBytes; -- WARNING: it is UB
     //     auto samples = leastSamples * Adc::Caps::digiResultBytes;
@@ -149,12 +153,14 @@ private:
 
     bool mIsRunning {};
 
-    constexpr std::uint32_t nearestBytes( std::uint32_t leastSamples ) noexcept {
+    static constexpr std::uint32_t nearestBytes( std::uint32_t leastSamples ) noexcept {
+        // NOTE: for history...
+        //
         // auto bytes = leastSamples * Adc::Caps::digiResultBytes;
         // if ( bytes % Adc::Caps::digiDataBytesPerConv )
         //     bytes = ( ( bytes + Adc::Caps::digiDataBytesPerConv ) / Adc::Caps::digiDataBytesPerConv ) *
         //             Adc::Caps::digiDataBytesPerConv;
-
+        //
         // bytes = ( bytes / Adc::Caps::digiDataBytesPerConv ) * Adc::Caps::digiDataBytesPerConv +
         //         bool( bytes % Adc::Caps::digiDataBytesPerConv ) * Adc::Caps::digiDataBytesPerConv;
 
@@ -168,7 +174,8 @@ private:
     using enum BitsPerElement;
 
     [[maybe_unused]] Atten mAtten { eX1 };
-    SamplingRateType       mSamplingRateHZ { Adc::Caps::sampleFreqThresLow };
+
+    SamplingRateType mSamplingRateHZ { Adc::Caps::sampleFreqThresLow };
 
     std::uint32_t mSamplesPerPocket { nearestBytes( 512 ) / Adc::Caps::digiResultBytes };
     std::uint32_t mBytesPerPocket { nearestBytes( mSamplesPerPocket ) };
@@ -210,6 +217,8 @@ inline void Oscilloscope::start() {
     if ( mDigiPatterns.empty() )
         throw std::runtime_error( "-----Osc is not configured!!!\n" );
 
+    mIsRunning = true;
+
     mAdc.configure( mDigiPatterns, mSamplingRateHZ.get_value(), ADC_CONV_SINGLE_UNIT_1, ADC_DIGI_OUTPUT_FORMAT_TYPE1 );
     mAdc.start();
 
@@ -218,6 +227,8 @@ inline void Oscilloscope::start() {
 
     mTransmitterThread = std::jthread( [ this ]( std::stop_token token ) noexcept {
         // mData.reserve( mBytesPerPocket );
+
+        auto transmitter = mNetProto;
 
         using core::Periph::AdcCali;
 
@@ -248,7 +259,7 @@ inline void Oscilloscope::start() {
         while ( !token.stop_requested() ) {
             try {
                 using namespace std::chrono_literals;
-                while ( !token.stop_requested() && !mNetProto->hasConnection() )
+                while ( !token.stop_requested() && !transmitter->hasConnection() )
                     std::this_thread::sleep_for( 1s );
 
                 const auto resultNum =
@@ -296,19 +307,19 @@ inline void Oscilloscope::start() {
 #undef MERGE_VAR
 
 #if 0
-                mNetProto->write( dataSpan, []( asio::error_code ec, std::size_t transfered ) {
+                transmitter->write( dataSpan, []( asio::error_code ec, std::size_t transfered ) {
                     if ( ec )
                         std::print( "------ASIO Error {} !!!\n", ec.message() );
 
                     std::print( "-------Transfered {} bytes.\n", transfered );
                 } );
 #else
-                mNetProto->write( std::as_bytes( values ) );
+                transmitter->write( std::as_bytes( values ) );
 #endif
 
             } catch ( const asio::system_error & e ) { stop(); } catch ( const std::bad_alloc & e ) {
                 std::println( "------Sending error: {}", e.what() );
-                mNetProto->waitForDone();
+                transmitter->waitForDone();
             } catch ( const std::exception & e ) { std::print( "------Sending error: {}\n", e.what() ); }
         }
     } );
@@ -317,16 +328,50 @@ inline void Oscilloscope::start() {
         return;
 
     mRecieverThread = std::jthread( [ this ]( std::stop_token token ) noexcept {
+        auto reciever = mNetProto;
         while ( !token.stop_requested() ) {
             try {
                 using namespace std::chrono_literals;
-                while ( !token.stop_requested() && !mNetProto->hasConnection() )
-                    std::this_thread::sleep_for( 1s );
 
-                const auto reciveBuffer = mNetProto->read( MAX_SIZE_RX );
+                std::this_thread::sleep_for( 100ms );
 
-                if ( !reciveBuffer.empty() &&
-                     static_cast< RequestType >( reciveBuffer.front() ) == RequestType::eSamplingRate ) {
+                const auto reciveBuffer = reciever->read( MAX_SIZE_RX );
+
+                if ( reciveBuffer.empty() )
+                    continue;
+
+                auto firstByte = static_cast< RequestType >( reciveBuffer.front() );
+
+                switch ( firstByte ) {
+                case RequestType::eSamplesPerPocket: {
+                    if ( reciveBuffer.size() < sizeof( SamplesPerPocketRequest ) )
+                        throw std::runtime_error( "[Data is incorrect]" );
+
+                    const std::span< const SamplesPerPocketRequest, 1 > reqv(
+                    reinterpret_cast< const SamplesPerPocketRequest * >( reciveBuffer.data() ), 1 );
+
+                    stop();
+
+                    mSamplesPerPocket =
+                    nearestBytes( fromBigEndianBytes( reqv.front().samplesNum ) ) / Adc::Caps::digiResultBytes;
+
+                    mBytesPerPocket = nearestBytes( mSamplesPerPocket );
+
+                    mData.resize( mSamplesPerPocket * mDigiPatterns.size() );
+
+                    mValues.resize( mSamplesPerPocket );
+
+                    mAdc = core::Periph::Adc::createContinuous(
+                    { .max_store_buf_size = mBytesPerPocket * 4 * mDigiPatterns.size(),
+                      .conv_frame_size    = mBytesPerPocket * mDigiPatterns.size(),
+                      .flags              = { .flush_pool = true } } );
+
+                    start();
+                    std::println( "------Current samplesPerPocket: ", mSamplesPerPocket );
+
+                    break;
+                }
+                case RequestType::eSamplingRate: {
                     if ( reciveBuffer.size() < sizeof( SamplingRateRequest ) )
                         throw std::runtime_error( "[Data is incorrect]" );
 
@@ -337,9 +382,16 @@ inline void Oscilloscope::start() {
                     mSamplingRateHZ.Hz( fromBigEndianBytes( reqv.front().rateHz ) );
                     start();
                     std::println( "------Current samplingRateHz: ", mSamplingRateHZ.get_value() );
+
+                    break;
+                }
+				default: throw std::runtime_error("------Wrong request type!!!");
                 }
 
-            } catch ( const asio::system_error & e ) { stop(); } catch ( const std::bad_alloc & e ) {
+            } catch ( const asio::system_error & e ) {
+                std::println( "------Reciving system error: {}", e.what() );
+                stop();
+            } catch ( const std::bad_alloc & e ) {
                 std::println( "------Reciving bad_alloc error: {}", e.what() );
             } catch ( const std::exception & e ) { std::println( "------Reciving error: {}", e.what() ); }
         }

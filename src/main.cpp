@@ -2,8 +2,11 @@
 #include <esp_netif_ip_addr.h>
 #include <esp_netif_types.h>
 #include <esp_event_cxx.hpp>
+#include <driver/uart.h>
 
 #include "connect.hpp"
+#include "esp_exception.hpp"
+#include "hal/uart_types.h"
 #include "netif.hpp"
 #include "oscilloscopeLib.hpp"
 #include "wifi.hpp"
@@ -28,6 +31,8 @@ extern "C" int app_main() {
         static idf::event::ESPEventLoop loop {};
 
         static std::vector< std::unique_ptr< idf::event::ESPEventReg > > eventregs;
+
+        CHECK_THROW( uart_set_baudrate( uart_port_t::UART_NUM_0, 115200 ) );
 
         wifi_pmf_config_t pfm {};
         pfm.required = true;
@@ -84,16 +89,16 @@ extern "C" int app_main() {
             try {
                 auto evt = reinterpret_cast< ip_event_ap_staipassigned_t * >( params );
 
-                const auto     connIp   = IpV4( evt->ip );
-                constexpr auto connPort = Port( 8881 );
+                const auto     remoteIp   = IpV4( evt->ip );
+                constexpr auto remotePort = Port( 8881 );
 
                 constexpr auto localIp   = IpV4( "127.0.0.1" );
                 constexpr auto localPort = Port( 8882 );
 
                 osc1.stop( true );
-                osc1.setTransferProtocol( TransferProtocol::create( connIp, connPort, localIp, localPort ) );
+                osc1.setTransferProtocol( TransferProtocol::create( remoteIp, remotePort, localIp, localPort ) );
                 osc1.start();
-                std::print( "-------Endpoint: {}:{} added.\n", to_string( connIp ), to_string( connPort ) );
+                std::print( "-------Endpoint: {}:{} added.\n", to_string( remoteIp ), to_string( remotePort ) );
 
             } catch ( const std::exception & e ) { std::print( "-------Endpoint event handler: {}\n", e.what() ); }
         } ) );

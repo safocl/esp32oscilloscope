@@ -10,7 +10,7 @@
 #include <span>
 
 template < class... Ts > [[nodiscard]] consteval auto maxSizeOfTypes() noexcept {
-    return std::max( std::initializer_list< std::size_t > {
+    return std::ranges::max( std::initializer_list< std::size_t > {
     sizeof( Ts )...,
     } );
 }
@@ -38,11 +38,11 @@ template < ByteTypeConcept ByteType > constexpr auto toBytes( std::integral auto
 }
 
 template < ByteTypeConcept ByteType > constexpr auto toBigEndianBytes( std::integral auto i ) {
-    return toBytes< ByteType >( swapEndian< std::endian ::native, std::endian::big >( i ) );
+    return toBytes< ByteType >( swapEndian< std::endian::native, std::endian::big >( i ) );
 }
 
 constexpr auto fromBigEndian( std::integral auto i ) {
-    return swapEndian< std::endian ::big, std::endian ::native >( i );
+    return swapEndian< std::endian::big, std::endian::native >( i );
 }
 
 template < ByteTypeConcept ByteType, std::size_t N >

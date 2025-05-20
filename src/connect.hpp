@@ -49,24 +49,21 @@ public:
     constexpr void from( std::string_view ipStr ) {
         static_assert( 1 == sizeof( ArrayOfOctets::value_type ) );
 
-        using ForMinType =
-        std::common_type_t< decltype( std::distance( ipStr.data(), ipStr.data() ) ), decltype( ipStr.size() ) >;
-
         ArrayOfOctets a;
 
         for ( auto & el : a ) {
             auto [ ptr, ec ] = std::from_chars( ipStr.data(), ipStr.data() + ipStr.size(), el );
             if ( ec != std::errc() )
                 throw std::runtime_error( "IP string is invalid." );
-            ipStr.remove_prefix( std::min( static_cast< ForMinType >( std::distance( ipStr.data(), ptr ) + 1 ),
-                                           static_cast< ForMinType >( ipStr.size() ) ) );
+            ipStr.remove_prefix(
+            std::ranges::min( std::distance( ipStr.data(), ptr ) + 1, std::ranges::ssize( ipStr ) ) );
         }
 
         mOctets = a;
     }
 
     constexpr ArrayOfOctets asOctets() const { return mOctets; }
-    constexpr std::string   asString() const {
+    std::string             asString() const {
         return std::format( "{}.{}.{}.{}", mOctets[ 0 ], mOctets[ 1 ], mOctets[ 2 ], mOctets[ 3 ] );
     }
 
@@ -74,10 +71,8 @@ public:
 
     constexpr OctetType operator[]( ArrayOfOctets::size_type pos ) const { return mOctets[ pos ]; }
     constexpr IpV4 &    operator&=( const IpV4 & mask ) {
-        mOctets[ 0 ] &= mask.mOctets[ 0 ];
-        mOctets[ 1 ] &= mask.mOctets[ 1 ];
-        mOctets[ 2 ] &= mask.mOctets[ 2 ];
-        mOctets[ 3 ] &= mask.mOctets[ 3 ];
+        for ( auto i : std::views::iota( 0, 4 ) )
+            mOctets[ i ] &= mask.mOctets[ i ];
         return *this;
     }
 
@@ -91,7 +86,7 @@ constexpr IpV4 operator&( const IpV4 & lhs, const IpV4 & rhs ) {
     return ret;
 }
 
-constexpr inline std::string to_string( IpV4 ip ) { return ip.asString(); }
+inline std::string to_string( IpV4 ip ) { return ip.asString(); }
 
 constexpr inline IpV4::ArrayOfOctets to_array( IpV4 ip ) { return ip.asOctets(); }
 
@@ -131,14 +126,19 @@ public:
     }
 
     ~TransferProtocol() {
+        // mRemote.cancel();
+        // mRemote.close();
+        //
+        // mLocal.cancel();
+        // mLocal.close();
+        //
+        // mClientCtx.stop();
+        // mServerCtx.stop();
+    }
+
+    void stop() {
         mRemote.cancel();
-        mRemote.close();
-
         mLocal.cancel();
-        mLocal.close();
-
-        mClientCtx.stop();
-        mServerCtx.stop();
     }
 
     void write( std::span< const DataType > data, std::invocable< asio::error_code, std::size_t > auto compliteCb );
