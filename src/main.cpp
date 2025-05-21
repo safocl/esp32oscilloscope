@@ -87,7 +87,7 @@ extern "C" int app_main() {
         idf::event::ESPEvent( IP_EVENT, idf::event::ESPEventID( IP_EVENT_AP_STAIPASSIGNED ) ),
         []( const idf::event::ESPEvent &, void * params ) {
             try {
-                auto evt = reinterpret_cast< ip_event_ap_staipassigned_t * >( params );
+                auto evt = static_cast< ip_event_ap_staipassigned_t * >( params );
 
                 const auto     remoteIp   = IpV4( evt->ip );
                 constexpr auto remotePort = Port( 8881 );
