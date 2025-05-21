@@ -40,13 +40,11 @@ extern "C" int app_main() {
         static constexpr std::string_view ssid( "esp32osc" );
         static constexpr std::string_view passwd( "esp32osc" );
 
-        wifi_ap_config_t apConf {};
-        std::ranges::copy( ssid, &apConf.ssid[ 0 ] );
-        std::ranges::copy( passwd, &apConf.password[ 0 ] );
-        apConf.channel        = 5;
-        apConf.authmode       = wifi_auth_mode_t::WIFI_AUTH_WPA2_PSK;
-        apConf.max_connection = 5;
-        apConf.pmf_cfg        = pfm;
+        wifi_ap_config_t apConf {
+            .channel = 5, .authmode = wifi_auth_mode_t::WIFI_AUTH_WPA2_PSK, .max_connection = 5, .pmf_cfg = pfm
+        };
+        std::ranges::copy( ssid, apConf.ssid );
+        std::ranges::copy( passwd, apConf.password );
 
         wifi_config_t cfg = { .ap = apConf };
 

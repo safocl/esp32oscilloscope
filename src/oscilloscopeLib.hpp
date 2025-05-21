@@ -108,7 +108,7 @@ public:
 
     Oscilloscope() = default;
     explicit Oscilloscope( const CreateInfo & c, std::shared_ptr< Connect::TransferProtocol > transferProtocol ) :
-    mAtten( c.atten ), mSamplingRateHZ( c.samplingRateHz ) {}
+    mAtten( c.atten ), mSamplingRateHZ( c.samplingRateHz ), mNetProto( transferProtocol ) {}
 
     void start();
     void stop( bool stopReciever = false ) {
@@ -385,7 +385,7 @@ inline void Oscilloscope::start() {
 
                     break;
                 }
-				default: throw std::runtime_error("------Wrong request type!!!");
+                default: throw std::runtime_error( "------Wrong request type!!!" );
                 }
 
             } catch ( const asio::system_error & e ) {
