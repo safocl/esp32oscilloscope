@@ -88,11 +88,11 @@ esrDataResponseHeaderToRaw( BitsPerElement bpe, std::uint8_t dataPerElement, std
 
 class EsrMeter final {
 public:
-    using SamplingRateType = idf::Frequency;
-    using OutputDataType   = std::int16_t;
-    using Adc              = core::Periph::Adc;
-    using AdcHandler       = Adc::Continuous;
-    using AdcCali          = core::Periph::AdcCali;
+    using FreqType       = idf::Frequency;
+    using OutputDataType = std::int16_t;
+    using Adc            = core::Periph::Adc;
+    using AdcHandler     = Adc::Continuous;
+    using AdcCali        = core::Periph::AdcCali;
 
     enum class VoltageAtten : std::underlying_type_t< dac_cosine_atten_t > {
         dB_0 =
@@ -106,11 +106,11 @@ public:
         idf::GPIONum signalHi { 36 };
         idf::GPIONum signalLow { 39 };
 
-        SamplingRateType adcLowSamplingRateHz { SamplingRateType::KHz( 20 ) };
-        SamplingRateType adcHiSamplingRateHz { SamplingRateType::MHz( 2 ) };
+        FreqType adcLowSamplingRateHz { FreqType::KHz( 20 ) };
+        FreqType adcHiSamplingRateHz { FreqType::MHz( 2 ) };
 
-        SamplingRateType dacLowSamplingRateHz { SamplingRateType::Hz( 200 ) };
-        SamplingRateType dacHiSamplingRateHz { SamplingRateType::KHz( 100 ) };
+        FreqType dacLowSamplingRateHz { FreqType::Hz( 200 ) };
+        FreqType dacHiSamplingRateHz { FreqType::KHz( 100 ) };
     };
 
     EsrMeter() = default;
@@ -148,11 +148,11 @@ private:
 
     std::jthread mTransmitterThread;
 
-    SamplingRateType mAdcLowSamplingRateHz { SamplingRateType::KHz( 20 ) };
-    SamplingRateType mAdcHiSamplingRateHz { SamplingRateType::MHz( 2 ) };
+    FreqType mAdcLowSamplingRateHz { FreqType::KHz( 20 ) };
+    FreqType mAdcHiSamplingRateHz { FreqType::MHz( 2 ) };
 
-    SamplingRateType mDacLowSamplingRateHz { SamplingRateType::Hz( 200 ) };
-    SamplingRateType mDacHiSamplingRateHz { SamplingRateType::KHz( 100 ) };
+    FreqType mDacLowSamplingRateHz { FreqType::Hz( 200 ) };
+    FreqType mDacHiSamplingRateHz { FreqType::KHz( 100 ) };
 
     std::uint32_t mSamplesPerPocket { nearestBytes( 4096 ) / Adc::Caps::digiResultBytes };
     std::uint32_t mBytesPerPocket { nearestBytes( mSamplesPerPocket ) };
@@ -216,7 +216,7 @@ inline void EsrMeter::start() {
                                          static_cast< adc_bitwidth_t >( mDigiPatterns.at( 0 ).bit_width ),
                                          0 } );
 
-        auto calcValueFn = [ &caliHandler ]( auto el ) -> std::int16_t {
+        auto calcValueFn = [ &caliHandler ]( auto el ) -> OutputDataType {
             return caliHandler.rawToVoltage( el.type1.data ).get_value();
         };
 
@@ -227,7 +227,7 @@ inline void EsrMeter::start() {
 
         constexpr auto dacChannel { DAC_CHAN_0 };
 
-        auto createDacConfig = [ this ]( SamplingRateType freq ) {
+        auto createDacConfig = [ this ]( FreqType freq ) {
             return dac_cosine_config_t { dacChannel,
                                          freq.get_value(),
                                          DAC_COSINE_CLK_SRC_DEFAULT,
