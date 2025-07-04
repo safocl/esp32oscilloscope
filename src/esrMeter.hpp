@@ -106,13 +106,18 @@ public:
         idf::GPIONum signalHi { 36 };
         idf::GPIONum signalLow { 39 };
 
-        SamplingRateType lowSamplingRateHz { SamplingRateType::Hz( 200 ) };
-        SamplingRateType hiSamplingRateHz { SamplingRateType::KHz( 100 ) };
+        SamplingRateType adcLowSamplingRateHz { SamplingRateType::KHz( 20 ) };
+        SamplingRateType adcHiSamplingRateHz { SamplingRateType::MHz( 2 ) };
+
+        SamplingRateType dacLowSamplingRateHz { SamplingRateType::Hz( 200 ) };
+        SamplingRateType dacHiSamplingRateHz { SamplingRateType::KHz( 100 ) };
     };
 
     EsrMeter() = default;
     explicit EsrMeter( const CreateInfo & c, std::shared_ptr< Connect::TransferProtocol > transferProtocol ) :
-    mLowSamplingRateHz( c.lowSamplingRateHz ), mHiSamplingRateHz( c.hiSamplingRateHz ), mNetProto( transferProtocol ) {}
+    mAdcLowSamplingRateHz( c.adcLowSamplingRateHz ), mAdcHiSamplingRateHz( c.adcHiSamplingRateHz ),
+    mDacLowSamplingRateHz( c.dacLowSamplingRateHz ), mDacHiSamplingRateHz( c.dacHiSamplingRateHz ),
+    mNetProto( transferProtocol ) {}
 
     void start();
     void stop( bool stopReciever = false ) {
@@ -143,8 +148,11 @@ private:
 
     std::jthread mTransmitterThread;
 
-    SamplingRateType mLowSamplingRateHz { SamplingRateType::Hz( 200 ) };
-    SamplingRateType mHiSamplingRateHz { SamplingRateType::KHz( 100 ) };
+    SamplingRateType mAdcLowSamplingRateHz { SamplingRateType::KHz( 20 ) };
+    SamplingRateType mAdcHiSamplingRateHz { SamplingRateType::MHz( 2 ) };
+
+    SamplingRateType mDacLowSamplingRateHz { SamplingRateType::Hz( 200 ) };
+    SamplingRateType mDacHiSamplingRateHz { SamplingRateType::KHz( 100 ) };
 
     std::uint32_t mSamplesPerPocket { nearestBytes( 4096 ) / Adc::Caps::digiResultBytes };
     std::uint32_t mBytesPerPocket { nearestBytes( mSamplesPerPocket ) };
@@ -229,8 +237,8 @@ inline void EsrMeter::start() {
                                          {} };
         };
         const std::array dacConfigs {
-            createDacConfig( mLowSamplingRateHz ),
-            createDacConfig( mHiSamplingRateHz ),
+            createDacConfig( mDacLowSamplingRateHz ),
+            createDacConfig( mDacHiSamplingRateHz ),
         };
 
         const auto       sizeOneValueRange = mValues.size() / 3;
@@ -247,8 +255,8 @@ inline void EsrMeter::start() {
         };
 
         const std::array measureFreqs {
-            std::max( Adc::Caps::sampleFreqThresLow, mLowSamplingRateHz ),
-            std::min( Adc::Caps::sampleFreqThresHigh, mHiSamplingRateHz ),
+            std::max( Adc::Caps::sampleFreqThresLow, mAdcLowSamplingRateHz ),
+            std::min( Adc::Caps::sampleFreqThresHigh, mAdcHiSamplingRateHz ),
         };
 
         while ( !token.stop_requested() ) {
@@ -287,7 +295,7 @@ inline void EsrMeter::start() {
                                          .flags              = { .flush_pool = true } } );
 
                 continueAdc.configure( mDigiPatterns,
-                                       std::max( Adc::Caps::sampleFreqThresLow, mLowSamplingRateHz ),
+                                       std::max( Adc::Caps::sampleFreqThresLow, mAdcLowSamplingRateHz ),
                                        ADC_CONV_SINGLE_UNIT_1,
                                        ADC_DIGI_OUTPUT_FORMAT_TYPE1 );
 
@@ -389,9 +397,6 @@ inline void EsrMeter::start() {
                 }
 
                 std::span values( mValues );
-                // std::ranges::transform( digiesSigHi, digiesSigLow, values.begin(), std::minus(), {}, {} );
-                // std::ranges::transform(
-                // digiesSigHi, digiesSigLow, values.begin(), []( auto a, auto b ) { return a; }, {}, {} );
 
                 transmitter->write( std::as_bytes( values ) );
 
