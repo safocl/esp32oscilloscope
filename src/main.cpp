@@ -1,24 +1,31 @@
+#include <array>
 #include <esp_netif.h>
 #include <esp_netif_ip_addr.h>
 #include <esp_netif_types.h>
 #include <esp_event_cxx.hpp>
 #include <driver/uart.h>
+#include <driver/dac_cosine.h>
 
 #include "connect.hpp"
 #include "esp_exception.hpp"
 #include "hal/uart_types.h"
 #include "netif.hpp"
-#include "oscilloscopeLib.hpp"
+#include "esrMeter.hpp"
+#include "soc/clk_tree_defs.h"
 #include "wifi.hpp"
+#include "dac.hpp"
 
 #include <asio/ip/address_v4.hpp>
 
 #include <algorithm>
 #include <memory>
 #include <print>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <type_traits>
 #include <vector>
 
 using Connect::Wifi;
@@ -79,7 +86,7 @@ extern "C" int app_main() {
             std::this_thread::sleep_for( 1000ms );
         }
 
-        static Osc::Oscilloscope osc1;
+        static Esr::EsrMeter osc1;
 
         eventregs.push_back( loop.register_event(
         idf::event::ESPEvent( IP_EVENT, idf::event::ESPEventID( IP_EVENT_AP_STAIPASSIGNED ) ),

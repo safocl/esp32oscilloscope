@@ -4,6 +4,7 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "gpio_cxx.hpp"
 #include "hal/adc_types.h"
+#include "system_cxx.hpp"
 #include <chrono>
 #include <concepts>
 #include <cstddef>
@@ -33,15 +34,15 @@ public:
         static constexpr auto attenNum         = SOC_ADC_ATTEN_NUM;
 
         /*!< Digital */
-        static constexpr auto digiControllerNum    = SOC_ADC_DIGI_CONTROLLER_NUM;
-        static constexpr auto pattLenMax           = SOC_ADC_PATT_LEN_MAX;
-        static constexpr auto digiMinBitwidth      = SOC_ADC_DIGI_MIN_BITWIDTH;
-        static constexpr auto digiMaxBitwidth      = SOC_ADC_DIGI_MAX_BITWIDTH;
-        static constexpr auto digiResultBytes      = SOC_ADC_DIGI_RESULT_BYTES;
-        static constexpr auto digiDataBytesPerConv = SOC_ADC_DIGI_DATA_BYTES_PER_CONV;
-        static constexpr auto digiMonitorNum       = SOC_ADC_DIGI_MONITOR_NUM;
-        static constexpr auto sampleFreqThresHigh  = SOC_ADC_SAMPLE_FREQ_THRES_HIGH;
-        static constexpr auto sampleFreqThresLow   = SOC_ADC_SAMPLE_FREQ_THRES_LOW;
+        static constexpr auto           digiControllerNum    = SOC_ADC_DIGI_CONTROLLER_NUM;
+        static constexpr auto           pattLenMax           = SOC_ADC_PATT_LEN_MAX;
+        static constexpr auto           digiMinBitwidth      = SOC_ADC_DIGI_MIN_BITWIDTH;
+        static constexpr auto           digiMaxBitwidth      = SOC_ADC_DIGI_MAX_BITWIDTH;
+        static constexpr auto           digiResultBytes      = SOC_ADC_DIGI_RESULT_BYTES;
+        static constexpr auto           digiDataBytesPerConv = SOC_ADC_DIGI_DATA_BYTES_PER_CONV;
+        static constexpr auto           digiMonitorNum       = SOC_ADC_DIGI_MONITOR_NUM;
+        static constexpr idf::Frequency sampleFreqThresHigh  = idf::Frequency::Hz( SOC_ADC_SAMPLE_FREQ_THRES_HIGH );
+        static constexpr idf::Frequency sampleFreqThresLow   = idf::Frequency::Hz( SOC_ADC_SAMPLE_FREQ_THRES_LOW );
 
         /*!< RTC */
         static constexpr auto rtcMinBitwidth = SOC_ADC_RTC_MIN_BITWIDTH;
@@ -90,7 +91,11 @@ public:
     public:
         ~OneShot() { Deleter()( mHandle ); }
 
-        ValueType getOneShotValue();
+        int getOneShotValue( adc_channel_t chan ) {
+            int v;
+            CHECK_THROW( adc_oneshot_read( mHandle, chan, &v ) );
+            return v;
+        }
 
         static ChannelInfo ioToChannel( idf::GPIONum pin ) {
             ChannelInfo ret;
@@ -143,14 +148,14 @@ public:
         void configure( VariantConfig && config ) { CHECK_THROW( adc_continuous_config( mHandle, &config ) ); }
 
         void configure( std::span< adc_digi_pattern_config_t > adcPatterns,
-                        uint32_t                               samplingRateHZ,
+                        idf::Frequency                         samplingRateHZ,
                         adc_digi_convert_mode_t                convMode,
                         adc_digi_output_format_t               format
 
         ) {
             configure( { .pattern_num    = adcPatterns.size(),
                          .adc_pattern    = adcPatterns.data(),
-                         .sample_freq_hz = samplingRateHZ,
+                         .sample_freq_hz = samplingRateHZ.get_value(),
                          .conv_mode      = convMode,
                          .format         = format } );
         }
@@ -210,6 +215,24 @@ public:
 
 class AdcCali final {
 public:
+    /**
+ * A general voltage class to be used whereever an unbound voltage value is necessary.
+ * value is millivolts
+ */
+    class Voltage final : public idf::StrongValueOrdered< int > {
+    public:
+        constexpr explicit Voltage( int voltageMillivolts ) : StrongValueOrdered< int >( voltageMillivolts ) {}
+
+        constexpr Voltage( const Voltage & )             = default;
+        constexpr Voltage & operator=( const Voltage & ) = default;
+
+        using StrongValueOrdered< int >::get_value;
+
+        static constexpr Voltage mV( int voltage ) { return Voltage( voltage ); }
+
+        static constexpr Voltage V( int voltage ) { return Voltage( voltage * 1000 ); }
+    };
+
     using SchemeVerFlags = adc_cali_scheme_ver_t;
 
     static SchemeVerFlags checkScheme() {
@@ -222,11 +245,11 @@ public:
     public:
         friend class AdcCali;
 
-        int rawToVoltage( int raw ) {
+        Voltage rawToVoltage( int raw ) {
             int v;
             CHECK_THROW( adc_cali_raw_to_voltage( h, raw, &v ) );
 
-            return v;
+            return Voltage( v );
         }
 
         ~BaseHandle() { Deleter::destroy( h ); }
