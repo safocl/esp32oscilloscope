@@ -61,12 +61,39 @@ public:
     #error The size of RESULT is not 2 bytes.
 #endif
 
-    struct ChannelInfo final {
-        adc_unit_t    unit;
-        adc_channel_t channel;
+    /**
+     * @brief A special adc unit number representation and make sure it's correct.
+     */
+    class AdcUnitNum final : public StrongValueComparable< adc_unit_t > {
+    public:
+        using NativeType = adc_unit_t;
+
+        constexpr explicit AdcUnitNum( adc_unit_t unit ) : StrongValueComparable< NativeType >( unit ) {}
+
+        using StrongValueComparable< NativeType >::operator==;
+        using StrongValueComparable< NativeType >::operator!=;
     };
 
-    struct OneShot final {
+    /**
+     * @brief A special adc channel number representation and make sure it's correct.
+     */
+    class AdcChannelNum final : public StrongValueComparable< adc_channel_t > {
+    public:
+        using NativeType = adc_channel_t;
+
+        constexpr explicit AdcChannelNum( adc_channel_t unit ) : StrongValueComparable< NativeType >( unit ) {}
+
+        using StrongValueComparable< NativeType >::operator==;
+        using StrongValueComparable< NativeType >::operator!=;
+    };
+
+    // struct ChannelInfo final {
+    //     AdcUnitNum    unit;
+    //     AdcChannelNum channel;
+    // };
+
+    class OneShot final {
+    public:
         friend class Adc;
 
         using InitConfig    = adc_oneshot_unit_init_cfg_t;
@@ -91,22 +118,24 @@ public:
     public:
         ~OneShot() { Deleter()( mHandle ); }
 
-        int getOneShotValue( adc_channel_t chan ) {
+        int getOneShotValue( AdcChannelNum chan ) {
             int v;
-            CHECK_THROW( adc_oneshot_read( mHandle, chan, &v ) );
+            CHECK_THROW( adc_oneshot_read( mHandle, chan.get_value(), &v ) );
             return v;
         }
 
-        static ChannelInfo ioToChannel( idf::GPIONum pin ) {
-            ChannelInfo ret;
-            CHECK_THROW( adc_oneshot_io_to_channel( pin.get_value(), &ret.unit, &ret.channel ) );
+        static std::tuple< AdcUnitNum, AdcChannelNum > ioToChannel( idf::GPIONum pin ) {
+            adc_unit_t    unit;
+            adc_channel_t channel;
+            CHECK_THROW( adc_oneshot_io_to_channel( pin.get_value(), &unit, &channel ) );
 
-            return ret;
+            return { AdcUnitNum( unit ), AdcChannelNum( channel ) };
         }
 
-        static idf::GPIONum channelToIo( const ChannelInfo & info ) {
+        static idf::GPIONum channelToIo( std::tuple< AdcUnitNum, AdcChannelNum > info ) {
             int ret;
-            CHECK_THROW( adc_oneshot_channel_to_io( info.unit, info.channel, &ret ) );
+            CHECK_THROW( adc_oneshot_channel_to_io(
+            std::get< AdcUnitNum >( info ).get_value(), std::get< AdcChannelNum >( info ).get_value(), &ret ) );
 
             return idf::GPIONum( ret );
         }
@@ -115,7 +144,8 @@ public:
         Handle mHandle;
     };
 
-    struct Continuous final {
+    class Continuous final {
+    public:
         friend class Adc;
 
         using InitConfig    = adc_continuous_handle_cfg_t;
@@ -125,6 +155,17 @@ public:
         struct ReadInfo final {
             std::uint32_t bytes;
             std::uint32_t resultNum;
+        };
+
+        static adc_digi_pattern_config_t
+        createAdcDigiPatternConfig( adc_atten_t atten, idf::GPIONum gpio, adc_bitwidth_t bitwidth ) {
+            const auto channelInfo = ioToChannel( gpio );
+            return adc_digi_pattern_config_t {
+                static_cast< std::uint8_t >( atten ),
+                static_cast< std::uint8_t >( std::get< Adc::AdcChannelNum >( channelInfo ).get_value() ),
+                static_cast< std::uint8_t >( std::get< Adc::AdcUnitNum >( channelInfo ).get_value() ),
+                static_cast< std::uint8_t >( adc_bitwidth_t::ADC_BITWIDTH_12 )
+            };
         };
 
     private:
@@ -191,16 +232,18 @@ public:
 
         void flushPool() { adc_continuous_flush_pool( mHandle ); }
 
-        static ChannelInfo ioToChannel( idf::GPIONum pin ) {
-            ChannelInfo ret;
-            CHECK_THROW( adc_continuous_io_to_channel( pin.get_value(), &ret.unit, &ret.channel ) );
+        static std::tuple< AdcUnitNum, AdcChannelNum > ioToChannel( idf::GPIONum pin ) {
+            adc_unit_t    unit;
+            adc_channel_t channel;
+            CHECK_THROW( adc_continuous_io_to_channel( pin.get_value(), &unit, &channel ) );
 
-            return ret;
+            return { AdcUnitNum( unit ), AdcChannelNum( channel ) };
         }
 
-        static idf::GPIONum channelToIo( const ChannelInfo & info ) {
+        static idf::GPIONum channelToIo( std::tuple< AdcUnitNum, AdcChannelNum > info ) {
             int ret;
-            CHECK_THROW( adc_continuous_channel_to_io( info.unit, info.channel, &ret ) );
+            CHECK_THROW( adc_continuous_channel_to_io(
+            std::get< AdcUnitNum >( info ).get_value(), std::get< AdcChannelNum >( info ).get_value(), &ret ) );
 
             return idf::GPIONum( ret );
         }

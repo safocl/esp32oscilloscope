@@ -164,14 +164,10 @@ private:
     VoltageAtten mAtten { VoltageAtten::dB_6 };
 
     std::vector< adc_digi_pattern_config_t > mDigiPatterns {
-        adc_digi_pattern_config_t { static_cast< std::uint8_t >( adc_atten_t::ADC_ATTEN_DB_12 ),
-                                    static_cast< std::uint8_t >( AdcHandler::ioToChannel( mSignalHi ).channel ),
-                                    static_cast< std::uint8_t >( AdcHandler::ioToChannel( mSignalHi ).unit ),
-                                    static_cast< std::uint8_t >( adc_bitwidth_t::ADC_BITWIDTH_12 ) },
-        adc_digi_pattern_config_t { static_cast< std::uint8_t >( adc_atten_t::ADC_ATTEN_DB_12 ),
-                                    static_cast< std::uint8_t >( AdcHandler::ioToChannel( mSignalLow ).channel ),
-                                    static_cast< std::uint8_t >( AdcHandler::ioToChannel( mSignalLow ).unit ),
-                                    static_cast< std::uint8_t >( adc_bitwidth_t::ADC_BITWIDTH_12 ) }
+        AdcHandler::createAdcDigiPatternConfig(
+        adc_atten_t::ADC_ATTEN_DB_12, mSignalHi, adc_bitwidth_t::ADC_BITWIDTH_12 ),
+        AdcHandler::createAdcDigiPatternConfig(
+        adc_atten_t::ADC_ATTEN_DB_12, mSignalLow, adc_bitwidth_t::ADC_BITWIDTH_12 ),
     };
 
     std::shared_ptr< Connect::TransferProtocol > mNetProto { nullptr };
@@ -211,11 +207,11 @@ inline void EsrMeter::start() {
             break;
         };
 
-        auto caliHandler = AdcCali::create(
-        adc_cali_line_fitting_config_t { static_cast< adc_unit_t >( mDigiPatterns.at( 0 ).unit ),
-                                         static_cast< adc_atten_t >( mDigiPatterns.at( 0 ).atten ),
-                                         static_cast< adc_bitwidth_t >( mDigiPatterns.at( 0 ).bit_width ),
-                                         0 } );
+        auto caliHandler =
+        AdcCali::create( adc_cali_line_fitting_config_t { adc_unit_t( mDigiPatterns.at( 0 ).unit ),
+                                                          adc_atten_t( mDigiPatterns.at( 0 ).atten ),
+                                                          adc_bitwidth_t( mDigiPatterns.at( 0 ).bit_width ),
+                                                          0 } );
 
         auto calcValueFn = [ &caliHandler ]( auto el ) -> OutputDataType {
             return caliHandler.rawToVoltage( el.type1.data ).get_value();
@@ -276,14 +272,14 @@ inline void EsrMeter::start() {
                 std::this_thread::sleep_for( 100ms );
 
                 {
-                    const auto channelInfo = Adc::OneShot::ioToChannel( mSignalLow );
+                    const auto [ unitNum, channelNum ] = Adc::OneShot::ioToChannel( mSignalLow );
 
                     auto oneShotAdc = Adc::createOneShot(
-                    Adc::OneShot::InitConfig { .unit_id  = channelInfo.unit,
+                    Adc::OneShot::InitConfig { .unit_id  = unitNum.get_value(),
                                                .clk_src  = adc_oneshot_clk_src_t::ADC_RTC_CLK_SRC_DEFAULT,
                                                .ulp_mode = adc_ulp_mode_t::ADC_ULP_MODE_DISABLE } );
 
-                    while ( caliHandler.rawToVoltage( oneShotAdc.getOneShotValue( channelInfo.channel ) ) >
+                    while ( caliHandler.rawToVoltage( oneShotAdc.getOneShotValue( channelNum ) ) >
                             AdcCali::Voltage::mV( 100 ) )
                         std::this_thread::sleep_for( 10ms );
                 }
