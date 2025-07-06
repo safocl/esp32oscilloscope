@@ -14,6 +14,7 @@
 #include <stop_token>
 #include <system_error>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -243,15 +244,13 @@ inline void EsrMeter::start() {
 
         const auto       sizeOneValueRange = mValues.size() / 3;
         const auto       sizeHalfRange     = sizeOneValueRange / mDigiPatterns.size();
-        const std::array measureSubranges {
-            std::make_pair( std::ranges::subrange { mValues.begin() + sizeOneValueRange * 1,
-                                                    mValues.begin() + sizeOneValueRange * 1 + sizeHalfRange * 1 },
-                            std::ranges::subrange { mValues.begin() + sizeOneValueRange * 1 + sizeHalfRange * 1,
-                                                    mValues.begin() + sizeOneValueRange * 1 + sizeHalfRange * 2 } ),
-            std::make_pair( std::ranges::subrange { mValues.begin() + sizeOneValueRange * 2,
-                                                    mValues.begin() + sizeOneValueRange * 2 + sizeHalfRange * 1 },
-                            std::ranges::subrange { mValues.begin() + sizeOneValueRange * 2 + sizeHalfRange * 1,
-                                                    mValues.begin() + sizeOneValueRange * 2 + sizeHalfRange * 2 } ),
+        const std::array measureRangesIters {
+            std::make_pair( mValues.begin() + sizeOneValueRange * 0,
+                            mValues.begin() + sizeOneValueRange * 0 + sizeHalfRange ),
+            std::make_pair( mValues.begin() + sizeOneValueRange * 1,
+                            mValues.begin() + sizeOneValueRange * 1 + sizeHalfRange ),
+            std::make_pair( mValues.begin() + sizeOneValueRange * 2,
+                            mValues.begin() + sizeOneValueRange * 2 + sizeHalfRange ),
         };
 
         const std::array measureFreqs {
@@ -311,24 +310,19 @@ inline void EsrMeter::start() {
                     if ( resultNum != sizeOneValueRange )
                         std::println( "------Read num don't equal the expected value num." );
 
-                    auto digiesSigHi =
-                    dataSpan | std::views::as_const |
-                    std::views::filter( [ sigHi ]( auto & el ) { return el.type1.channel == sigHi; } ) |
-                    std::views::transform( calcValueFn );
+                    auto [ hiRangeIter, lowRangeIter ] = measureRangesIters[ 0 ];
+                    const std::array contexts {
+                        std::tuple { sigHi, hiRangeIter },
+                        std::tuple { sigLow, lowRangeIter },
+                    };
+                    for ( auto [ sigChannel, iter ] : contexts ) {
+                        auto digiesSig =
+                        dataSpan | std::views::as_const |
+                        std::views::filter( [ sigChannel ]( auto & el ) { return el.type1.channel == sigChannel; } ) |
+                        std::views::transform( calcValueFn );
 
-                    auto digiesSigLow =
-                    dataSpan | std::views::as_const |
-                    std::views::filter( [ sigLow ]( auto & el ) { return el.type1.channel == sigLow; } ) |
-                    std::views::transform( calcValueFn );
-
-                    auto firstSubranges = std::make_pair(
-                    std::ranges::subrange { mValues.begin() + sizeOneValueRange * 1,
-                                            mValues.begin() + sizeOneValueRange * 1 + sizeHalfRange * 1 },
-                    std::ranges::subrange { mValues.begin() + sizeOneValueRange * 1 + sizeHalfRange * 1,
-                                            mValues.begin() + sizeOneValueRange * 1 + sizeHalfRange * 2 } );
-
-                    std::ranges::copy( digiesSigHi, firstSubranges.first.begin() );
-                    std::ranges::copy( digiesSigLow, firstSubranges.second.begin() );
+                        std::ranges::copy( digiesSig, iter );
+                    }
                 }
 
                 while ( !token.stop_requested() ) {
@@ -339,19 +333,16 @@ inline void EsrMeter::start() {
                     if ( resultNum != sizeOneValueRange )
                         std::println( "------Read num don't equal the expected value num." );
 
-                    auto digiesSigHi =
-                    dataSpan | std::views::as_const |
-                    std::views::filter( [ sigHi ]( auto & el ) { return el.type1.channel == sigHi; } ) |
-                    std::views::transform( calcValueFn );
+                    auto projChannel = []( auto & el ) { return el.type1.channel; };
+                    auto digiSigHi   = std::ranges::find( dataSpan, sigHi, projChannel );
+                    auto digiSigLow  = std::ranges::find( dataSpan, sigLow, projChannel );
 
-                    auto digiesSigLow =
-                    dataSpan | std::views::as_const |
-                    std::views::filter( [ sigLow ]( auto & el ) { return el.type1.channel == sigLow; } ) |
-                    std::views::transform( calcValueFn );
+                    if ( digiSigHi == dataSpan.end() || digiSigLow == dataSpan.end() )
+                        throw std::runtime_error( "------[Target voltage wait] Channel is not find!!!" );
 
-                    const auto valHi  = digiesSigHi.front();
-                    const auto valLow = digiesSigLow.front();
-                    if ( ( double( valHi ) / valLow ) > 0.98 )
+                    const double valHi  = calcValueFn( *digiSigHi );
+                    const double valLow = calcValueFn( *digiSigLow );
+                    if ( ( valHi / valLow ) > 0.98 )
                         break;
                     std::this_thread::sleep_for( 100ms );
                 }
@@ -359,10 +350,11 @@ inline void EsrMeter::start() {
                 continueAdc.stop();
                 dacOneshotHandler.release();
 
-                static_assert( measureSubranges.size() == dacConfigs.size() &&
+                static_assert( measureRangesIters.size() - 1 == dacConfigs.size() &&
                                dacConfigs.size() == measureFreqs.size() );
 
-                for ( auto [ r, dacConf, adcFreq ] : std::views::zip( measureSubranges, dacConfigs, measureFreqs ) ) {
+                for ( auto [ r, dacConf, adcFreq ] :
+                      std::views::zip( measureRangesIters | std::views::drop( 1 ), dacConfigs, measureFreqs ) ) {
                     continueAdc.configure(
                     mDigiPatterns, adcFreq, ADC_CONV_SINGLE_UNIT_1, ADC_DIGI_OUTPUT_FORMAT_TYPE1 );
 
@@ -376,24 +368,25 @@ inline void EsrMeter::start() {
                     continueAdc.read( std::as_writable_bytes( dataSpan ), std::chrono::milliseconds( ADC_MAX_DELAY ) )
                     .resultNum;
 
+                    continueAdc.stop();
+
                     if ( resultNum != sizeOneValueRange )
                         std::println( "------Read num don't equal the expected value num." );
 
-                    auto digiesSigHi =
-                    dataSpan | std::views::as_const |
-                    std::views::filter( [ sigHi ]( auto & el ) { return el.type1.channel == sigHi; } ) |
-                    std::views::transform( calcValueFn );
+                    auto [ hiRangeIter, lowRangeIter ] = r;
 
-                    auto digiesSigLow =
-                    dataSpan | std::views::as_const |
-                    std::views::filter( [ sigLow ]( auto & el ) { return el.type1.channel == sigLow; } ) |
-                    std::views::transform( calcValueFn );
+                    const std::array contexts {
+                        std::tuple { sigHi, hiRangeIter },
+                        std::tuple { sigLow, lowRangeIter },
+                    };
+                    for ( auto [ sigChannel, iter ] : contexts ) {
+                        auto digiesSig =
+                        dataSpan | std::views::as_const |
+                        std::views::filter( [ sigChannel ]( auto & el ) { return el.type1.channel == sigChannel; } ) |
+                        std::views::transform( calcValueFn );
 
-                    continueAdc.stop();
-
-                    auto [ hiRange, lowRange ] = r;
-                    std::ranges::copy( digiesSigHi, hiRange.begin() );
-                    std::ranges::copy( digiesSigLow, lowRange.begin() );
+                        std::ranges::copy( digiesSig, iter );
+                    }
                 }
 
                 std::span values( mValues );
@@ -402,7 +395,6 @@ inline void EsrMeter::start() {
 
                 using namespace std::chrono_literals;
                 std::this_thread::sleep_for( 5s );
-
             } catch ( const asio::system_error & e ) { stop(); } catch ( const std::bad_alloc & e ) {
                 std::println( "------Sending error: {}", e.what() );
                 transmitter->waitForDone();
