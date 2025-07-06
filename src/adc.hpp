@@ -157,15 +157,26 @@ public:
             std::uint32_t resultNum;
         };
 
-        static adc_digi_pattern_config_t
-        createAdcDigiPatternConfig( adc_atten_t atten, idf::GPIONum gpio, adc_bitwidth_t bitwidth ) {
-            const auto channelInfo = ioToChannel( gpio );
-            return adc_digi_pattern_config_t {
-                static_cast< std::uint8_t >( atten ),
-                static_cast< std::uint8_t >( std::get< Adc::AdcChannelNum >( channelInfo ).get_value() ),
-                static_cast< std::uint8_t >( std::get< Adc::AdcUnitNum >( channelInfo ).get_value() ),
-                static_cast< std::uint8_t >( adc_bitwidth_t::ADC_BITWIDTH_12 )
-            };
+        class AdcDigiPatternConfig final {
+        public:
+            using NativeType = adc_digi_pattern_config_t;
+            AdcDigiPatternConfig( adc_atten_t atten, idf::GPIONum gpio, adc_bitwidth_t bitwidth ) :
+            v( [ & ]() {
+                const auto [ unitNum, channelNum ] = ioToChannel( gpio );
+                return NativeType { std::uint8_t( atten ),
+                                    std::uint8_t( channelNum.get_value() ),
+                                    std::uint8_t( unitNum.get_value() ),
+                                    std::uint8_t( adc_bitwidth_t::ADC_BITWIDTH_12 ) };
+            }() ) {
+                static_assert( std::is_standard_layout_v< AdcDigiPatternConfig > &&
+                               sizeof( AdcDigiPatternConfig ) == sizeof( NativeType ),
+                               "it is necessary to be able to cast a pointer to a native type in arrays (and back)." );
+            }
+
+            NativeType get_value() const { return v; }
+
+        private:
+            NativeType v;
         };
 
     private:
@@ -188,14 +199,21 @@ public:
 
         void configure( VariantConfig && config ) { CHECK_THROW( adc_continuous_config( mHandle, &config ) ); }
 
-        void configure( std::span< adc_digi_pattern_config_t > adcPatterns,
-                        idf::Frequency                         samplingRateHZ,
-                        adc_digi_convert_mode_t                convMode,
-                        adc_digi_output_format_t               format
+        void configure( std::span< AdcDigiPatternConfig > adcPatterns,
+                        idf::Frequency                    samplingRateHZ,
+                        adc_digi_convert_mode_t           convMode,
+                        adc_digi_output_format_t          format
 
         ) {
-            configure( { .pattern_num    = adcPatterns.size(),
-                         .adc_pattern    = adcPatterns.data(),
+            /*
+			 * https://eel.is/c++draft/basic.compound#5
+			 * https://eel.is/c++draft/class.prop#10
+			*/
+            std::span< adc_digi_pattern_config_t > nativeTypePatternsSpan(
+            reinterpret_cast< adc_digi_pattern_config_t * >( adcPatterns.data() ), adcPatterns.size() );
+
+            configure( { .pattern_num    = nativeTypePatternsSpan.size(),
+                         .adc_pattern    = nativeTypePatternsSpan.data(),
                          .sample_freq_hz = samplingRateHZ.get_value(),
                          .conv_mode      = convMode,
                          .format         = format } );

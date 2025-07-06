@@ -161,13 +161,11 @@ private:
     idf::GPIONum mSignalHi { 36 };
     idf::GPIONum mSignalLow { 39 };
 
-    VoltageAtten mAtten { VoltageAtten::dB_6 };
+    VoltageAtten mDacCosineAtten { VoltageAtten::dB_6 };
 
-    std::vector< adc_digi_pattern_config_t > mDigiPatterns {
-        AdcHandler::createAdcDigiPatternConfig(
-        adc_atten_t::ADC_ATTEN_DB_12, mSignalHi, adc_bitwidth_t::ADC_BITWIDTH_12 ),
-        AdcHandler::createAdcDigiPatternConfig(
-        adc_atten_t::ADC_ATTEN_DB_12, mSignalLow, adc_bitwidth_t::ADC_BITWIDTH_12 ),
+    std::vector< AdcHandler::AdcDigiPatternConfig > mDigiPatterns {
+        { adc_atten_t::ADC_ATTEN_DB_12, mSignalHi, adc_bitwidth_t::ADC_BITWIDTH_12 },
+        { adc_atten_t::ADC_ATTEN_DB_12, mSignalLow, adc_bitwidth_t::ADC_BITWIDTH_12 },
     };
 
     std::shared_ptr< Connect::TransferProtocol > mNetProto { nullptr };
@@ -208,9 +206,9 @@ inline void EsrMeter::start() {
         };
 
         auto caliHandler =
-        AdcCali::create( adc_cali_line_fitting_config_t { adc_unit_t( mDigiPatterns.at( 0 ).unit ),
-                                                          adc_atten_t( mDigiPatterns.at( 0 ).atten ),
-                                                          adc_bitwidth_t( mDigiPatterns.at( 0 ).bit_width ),
+        AdcCali::create( adc_cali_line_fitting_config_t { adc_unit_t( mDigiPatterns.at( 0 ).get_value().unit ),
+                                                          adc_atten_t( mDigiPatterns.at( 0 ).get_value().atten ),
+                                                          adc_bitwidth_t( mDigiPatterns.at( 0 ).get_value().bit_width ),
                                                           0 } );
 
         auto calcValueFn = [ &caliHandler ]( auto el ) -> OutputDataType {
@@ -219,8 +217,8 @@ inline void EsrMeter::start() {
 
         std::span dataSpan( mData );
 
-        const auto sigHi  = mDigiPatterns[ 0 ].channel;
-        const auto sigLow = mDigiPatterns[ 1 ].channel;
+        const auto sigHi  = mDigiPatterns[ 0 ].get_value().channel;
+        const auto sigLow = mDigiPatterns[ 1 ].get_value().channel;
 
         constexpr auto dacChannel { DAC_CHAN_0 };
 
@@ -228,7 +226,7 @@ inline void EsrMeter::start() {
             return dac_cosine_config_t { dacChannel,
                                          freq.get_value(),
                                          DAC_COSINE_CLK_SRC_DEFAULT,
-                                         dac_cosine_atten_t( std::to_underlying( mAtten ) ),
+                                         dac_cosine_atten_t( std::to_underlying( mDacCosineAtten ) ),
                                          DAC_COSINE_PHASE_0,
                                          0,
                                          {} };
