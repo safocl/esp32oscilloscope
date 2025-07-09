@@ -5,6 +5,7 @@
 #include "gpio_cxx.hpp"
 #include "hal/adc_types.h"
 #include "system_cxx.hpp"
+#include <algorithm>
 #include <chrono>
 #include <concepts>
 #include <cstddef>
@@ -179,6 +180,14 @@ public:
             NativeType v;
         };
 
+        class SamplingRate final : idf::Frequency {
+        public:
+            constexpr SamplingRate( idf::Frequency frequency ) :
+            idf::Frequency( std::clamp( frequency, Caps::sampleFreqThresLow, Caps::sampleFreqThresHigh ) ) {}
+
+            using idf::Frequency::get_value;
+        };
+
     private:
         struct Construct final {
             Handle operator()( InitConfig && c ) const {
@@ -200,7 +209,7 @@ public:
         void configure( VariantConfig && config ) { CHECK_THROW( adc_continuous_config( mHandle, &config ) ); }
 
         void configure( std::span< AdcDigiPatternConfig > adcPatterns,
-                        idf::Frequency                    samplingRateHZ,
+                        SamplingRate                      samplingRate,
                         adc_digi_convert_mode_t           convMode,
                         adc_digi_output_format_t          format
 
@@ -214,7 +223,7 @@ public:
 
             configure( { .pattern_num    = nativeTypePatternsSpan.size(),
                          .adc_pattern    = nativeTypePatternsSpan.data(),
-                         .sample_freq_hz = samplingRateHZ.get_value(),
+                         .sample_freq_hz = samplingRate.get_value(),
                          .conv_mode      = convMode,
                          .format         = format } );
         }
