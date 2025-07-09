@@ -116,8 +116,8 @@ public:
 
     EsrMeter() = default;
     explicit EsrMeter( const CreateInfo & c, std::shared_ptr< Connect::TransferProtocol > transferProtocol ) :
-    mAdcLowSamplingRateHz( c.adcLowSamplingRateHz ), mAdcHiSamplingRateHz( c.adcHiSamplingRateHz ),
-    mDacLowSamplingRateHz( c.dacLowSamplingRateHz ), mDacHiSamplingRateHz( c.dacHiSamplingRateHz ),
+    mAdcLowSamplingRate( c.adcLowSamplingRateHz ), mAdcHiSamplingRate( c.adcHiSamplingRateHz ),
+    mDacLowSamplingRate( c.dacLowSamplingRateHz ), mDacHiSamplingRate( c.dacHiSamplingRateHz ),
     mNetProto( transferProtocol ) {}
 
     void start();
@@ -149,11 +149,11 @@ private:
 
     std::jthread mTransmitterThread;
 
-    FreqType mAdcLowSamplingRateHz { FreqType::KHz( 20 ) };
-    FreqType mAdcHiSamplingRateHz { FreqType::MHz( 2 ) };
+	Adc::Continuous::SamplingRate mAdcLowSamplingRate { FreqType::KHz( 20 ) };
+    Adc::Continuous::SamplingRate mAdcHiSamplingRate { FreqType::MHz( 2 ) };
 
-    FreqType mDacLowSamplingRateHz { FreqType::Hz( 200 ) };
-    FreqType mDacHiSamplingRateHz { FreqType::KHz( 100 ) };
+    FreqType mDacLowSamplingRate { FreqType::Hz( 200 ) };
+    FreqType mDacHiSamplingRate { FreqType::KHz( 100 ) };
 
     std::uint32_t mSamplesPerPocket { nearestBytes( 4096 ) / Adc::Caps::digiResultBytes };
     std::uint32_t mBytesPerPocket { nearestBytes( mSamplesPerPocket ) };
@@ -232,8 +232,8 @@ inline void EsrMeter::start() {
                                          {} };
         };
         const std::array dacConfigs {
-            createDacConfig( mDacLowSamplingRateHz ),
-            createDacConfig( mDacHiSamplingRateHz ),
+            createDacConfig( mDacLowSamplingRate ),
+            createDacConfig( mDacHiSamplingRate ),
         };
 
         const auto       sizeOneValueRange = mValues.size() / 3;
@@ -248,9 +248,10 @@ inline void EsrMeter::start() {
         };
 
         const std::array measureFreqs {
-            std::max( Adc::Caps::sampleFreqThresLow, mAdcLowSamplingRateHz ),
-            std::min( Adc::Caps::sampleFreqThresHigh, mAdcHiSamplingRateHz ),
+            mAdcLowSamplingRate,
+            mAdcHiSamplingRate,
         };
+        constexpr Adc::Continuous::SamplingRate sr = idf::Frequency::KHz( 1 );
 
         while ( !token.stop_requested() ) {
             try {
@@ -287,10 +288,8 @@ inline void EsrMeter::start() {
                                          .conv_frame_size    = mBytesPerPocket * mDigiPatterns.size(),
                                          .flags              = { .flush_pool = true } } );
 
-                continueAdc.configure( mDigiPatterns,
-                                       std::max( Adc::Caps::sampleFreqThresLow, mAdcLowSamplingRateHz ),
-                                       ADC_CONV_SINGLE_UNIT_1,
-                                       ADC_DIGI_OUTPUT_FORMAT_TYPE1 );
+                continueAdc.configure(
+                mDigiPatterns, mAdcLowSamplingRate, ADC_CONV_SINGLE_UNIT_1, ADC_DIGI_OUTPUT_FORMAT_TYPE1 );
 
                 continueAdc.start();
 

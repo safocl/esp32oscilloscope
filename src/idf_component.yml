@@ -2,6 +2,7 @@ dependencies:
   idf:
     version: ">=5.3"
   espressif/esp-idf-cxx:
-    version: "^1.0.2-beta"
+    # version: "^1.0.2-beta"
+    git: "https://github.com/safocl/esp-idf-cxx.git"
   espressif/asio:
     version: "^1.28.2"

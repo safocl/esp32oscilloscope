@@ -41,17 +41,12 @@ extern "C" int app_main() {
 
         CHECK_THROW( uart_set_baudrate( uart_port_t::UART_NUM_0, 115200 ) );
 
-        wifi_pmf_config_t pfm {};
-        pfm.required = true;
-
-        static constexpr std::string_view ssid( "esp32osc" );
-        static constexpr std::string_view passwd( "esp32osc" );
-
-        wifi_ap_config_t apConf {
-            .channel = 5, .authmode = wifi_auth_mode_t::WIFI_AUTH_WPA2_PSK, .max_connection = 5, .pmf_cfg = pfm
-        };
-        std::ranges::copy( ssid, apConf.ssid );
-        std::ranges::copy( passwd, apConf.password );
+        constexpr wifi_ap_config_t apConf { .ssid           = "esp32osc",
+                                            .password       = "esp32osc",
+                                            .channel        = 5,
+                                            .authmode       = wifi_auth_mode_t::WIFI_AUTH_WPA2_PSK,
+                                            .max_connection = 5,
+                                            .pmf_cfg        = { .required = true } };
 
         wifi_config_t cfg = { .ap = apConf };
 
