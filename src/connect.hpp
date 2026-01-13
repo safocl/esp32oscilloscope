@@ -2,10 +2,10 @@
 
 #include "utils.hpp"
 
-#include "asio/buffer.hpp"
-#include "asio/error_code.hpp"
-#include "asio/ip/basic_endpoint.hpp"
-#include "esp_netif_ip_addr.h"
+#include <asio/buffer.hpp>
+#include <asio/error_code.hpp>
+#include <asio/ip/basic_endpoint.hpp>
+#include <esp_netif_ip_addr.h>
 #include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
 #include <asio.hpp>
@@ -69,7 +69,7 @@ public:
 
     constexpr operator esp_ip4_addr_t() const { return { fromBytes( mOctets ) }; }
 
-    constexpr OctetType operator[]( ArrayOfOctets::size_type pos ) const { return mOctets[ pos ]; }
+    constexpr OctetType operator[]( ArrayOfOctets::size_type pos ) const { return mOctets.at( pos ); }
     constexpr IpV4 &    operator&=( const IpV4 & mask ) {
         for ( auto i : std::views::iota( 0, 4 ) )
             mOctets[ i ] &= mask.mOctets[ i ];
@@ -174,11 +174,11 @@ inline void TransferProtocol::write( std::span< const DataType >                
 }
 
 inline void TransferProtocol::write( std::span< const DataType > data ) {
-#if 0
-    std::print( "-----Transmit start {} bytes to: {}:{}\n",
-                data.size_bytes(),
-                mDestination.remote_endpoint().address().to_v4().to_string(),
-                mDestination.remote_endpoint().port() );
+#if 1
+    std::println( "-----Transmit start {} bytes to: {}:{}",
+                  data.size_bytes(),
+                  mRemote.remote_endpoint().address().to_v4().to_string(),
+                  mRemote.remote_endpoint().port() );
 #endif
     asio::write( mRemote, asio::buffer( data ) );
 }

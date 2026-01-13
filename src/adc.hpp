@@ -111,13 +111,17 @@ public:
         };
 
         struct Deleter final {
-            void operator()( Handle h ) { adc_oneshot_del_unit( h ); }
+            void operator()( Handle h ) { CHECK_THROW( adc_oneshot_del_unit( h ) ); }
         };
 
         OneShot( InitConfig && c ) : mHandle( Construct()( std::move( c ) ) ) {}
 
     public:
         ~OneShot() { Deleter()( mHandle ); }
+
+        void congigChannel( AdcChannelNum chan, adc_oneshot_chan_cfg_t config ) {
+            CHECK_THROW( adc_oneshot_config_channel( mHandle, chan.get_value(), &config ) );
+        }
 
         int getOneShotValue( AdcChannelNum chan ) {
             int v;
@@ -158,6 +162,13 @@ public:
             std::uint32_t resultNum;
         };
 
+        class Samples : public StrongValue< std::uint32_t > {
+        public:
+            using ValueType = std::uint32_t;
+            constexpr Samples( ValueType count ) : StrongValue::StrongValue( count * Caps::digiResultBytes ) {}
+            using StrongValue::get_value;
+        };
+
         class AdcDigiPatternConfig final {
         public:
             using NativeType = adc_digi_pattern_config_t;
@@ -185,6 +196,30 @@ public:
             constexpr SamplingRate( idf::Frequency frequency ) :
             idf::Frequency( std::clamp( frequency, Caps::sampleFreqThresLow, Caps::sampleFreqThresHigh ) ) {}
 
+            // f = samples / time
+            //
+            // samples = f * time
+            //
+            // time = samples / f
+
+            constexpr Samples toSamples( std::chrono::microseconds duration ) const {
+                auto samplesValue =
+                static_cast< unsigned long long >( get_value() ) * duration.count() / decltype( duration )::period::den;
+
+                if ( samplesValue > std::numeric_limits< Samples::ValueType >::max() )
+                    throw std::range_error( "In [SamplingRate::toSamples] return type is not in range" );
+                return samplesValue;
+            }
+
+            constexpr std::chrono::microseconds toDuration( Samples s ) const {
+                auto microsecondsValue = static_cast< unsigned long long >( s.get_value() ) *
+                                         std::chrono::microseconds::period::den / get_value();
+
+                if ( microsecondsValue > std::chrono::microseconds::max().count() )
+                    throw std::range_error( "In [SamplingRate::toDuration] return type is not in range" );
+                return std::chrono::microseconds { microsecondsValue };
+            }
+
             using idf::Frequency::get_value;
         };
 
@@ -198,7 +233,7 @@ public:
         };
 
         struct Deleter final {
-            void operator()( Handle h ) const noexcept { adc_continuous_deinit( h ); }
+            void operator()( Handle h ) const { CHECK_THROW( adc_continuous_deinit( h ) ); }
         };
 
         Continuous( InitConfig && c ) : mHandle( Construct()( std::move( c ) ) ) {}
@@ -218,6 +253,14 @@ public:
 			 * https://eel.is/c++draft/basic.compound#5
 			 * https://eel.is/c++draft/class.prop#10
 			*/
+            static_assert( std::is_standard_layout_v< AdcDigiPatternConfig > );
+
+            //clangd is not support std::is_pointer_interconvertible_with_class
+            // #ifndef __clang__
+            //             static_assert(
+            //             std::is_pointer_interconvertible_with_class< AdcDigiPatternConfig, adc_digi_pattern_config_t >(
+            //             &AdcDigiPatternConfig::v ) );
+            // #endif
             std::span< adc_digi_pattern_config_t > nativeTypePatternsSpan(
             reinterpret_cast< adc_digi_pattern_config_t * >( adcPatterns.data() ), adcPatterns.size() );
 
@@ -257,6 +300,13 @@ public:
             return { realReadSize, realReadSize / Adc::Caps::digiResultBytes };
         }
 
+        std::uint32_t readParse( std::span< adc_continuous_data_t > buf, std::chrono::milliseconds timeOut ) const {
+            std::uint32_t realReadSize;
+            CHECK_THROW( adc_continuous_read_parse( mHandle, buf.data(), buf.size(), &realReadSize, timeOut.count() ) );
+
+            return realReadSize;
+        }
+
         void flushPool() { adc_continuous_flush_pool( mHandle ); }
 
         static std::tuple< AdcUnitNum, AdcChannelNum > ioToChannel( idf::GPIONum pin ) {
@@ -280,7 +330,13 @@ public:
     };
 
     static Continuous createContinuous( Continuous::InitConfig && cfg ) { return Continuous( std::move( cfg ) ); }
-    static OneShot    createOneShot( OneShot::InitConfig && cfg ) { return OneShot( std::move( cfg ) ); }
+    static Continuous
+    createContinuous( Continuous::Samples maxStoreBuf, Continuous::Samples convFrames, bool isFlushPool ) {
+        return Continuous( { .max_store_buf_size = maxStoreBuf.get_value(),
+                             .conv_frame_size    = convFrames.get_value(),
+                             .flags              = { .flush_pool = isFlushPool } } );
+    }
+    static OneShot createOneShot( OneShot::InitConfig && cfg ) { return OneShot( std::move( cfg ) ); }
 };
 
 class AdcCali final {
@@ -301,6 +357,9 @@ public:
         static constexpr Voltage mV( int voltage ) { return Voltage( voltage ); }
 
         static constexpr Voltage V( int voltage ) { return Voltage( voltage * 1000 ); }
+
+        Voltage operator-( Voltage other ) const { return Voltage { get_value() - other.get_value() }; }
+        Voltage operator+( Voltage other ) const { return Voltage { get_value() + other.get_value() }; }
     };
 
     using SchemeVerFlags = adc_cali_scheme_ver_t;

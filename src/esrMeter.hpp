@@ -1,6 +1,6 @@
 #pragma once
 
-#include <print>
+#include <cmath>
 #include <algorithm>
 #include <bit>
 #include <chrono>
@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <exception>
 #include <memory>
+#include <print>
 #include <ranges>
 #include <span>
 #include <stdexcept>
@@ -19,17 +20,17 @@
 #include <utility>
 #include <vector>
 
-#include "utils.hpp"
 #include "adc.hpp"
-#include "dac.hpp"
 #include "connect.hpp"
+#include "dac.hpp"
+#include "utils.hpp"
 
-#include <hal/dac_types.h>
 #include <asio/system_error.hpp>
 #include <esp_adc/adc_cali_scheme.h>
 #include <esp_adc/adc_continuous.h>
 #include <gpio_cxx.hpp>
 #include <hal/adc_types.h>
+#include <hal/dac_types.h>
 #include <system_cxx.hpp>
 
 /***
@@ -62,11 +63,17 @@ struct SamplingRateRequest final {
     std::array< std::byte, 1 > type;
     std::array< std::byte, 4 > rateHz;
 };
+static_assert( std::is_standard_layout_v< SamplingRateRequest > );
+static_assert( std::alignment_of_v< SamplingRateRequest > == 1 );
+static_assert( sizeof( SamplingRateRequest ) == 5 );
 
 struct SamplesPerPocketRequest final {
     std::array< std::byte, 1 > type;
     std::array< std::byte, 4 > samplesNum;
 };
+static_assert( std::is_standard_layout_v< SamplesPerPocketRequest > );
+static_assert( std::alignment_of_v< SamplesPerPocketRequest > == 1 );
+static_assert( sizeof( SamplesPerPocketRequest ) == 5 );
 
 inline constexpr auto MAX_SIZE_RX = maxSizeOfTypes< SamplingRateRequest, SamplesPerPocketRequest >();
 
@@ -78,6 +85,9 @@ struct EsrDataResponseHeader final {
     std::array< std::byte, 1 > dataPerElement;
     std::array< std::byte, 4 > dataSize;
 };
+static_assert( std::is_standard_layout_v< EsrDataResponseHeader > );
+static_assert( std::alignment_of_v< EsrDataResponseHeader > == 1 );
+static_assert( sizeof( EsrDataResponseHeader ) == 7 );
 
 [[nodiscard]] constexpr EsrDataResponseHeader
 esrDataResponseHeaderToRaw( BitsPerElement bpe, std::uint8_t dataPerElement, std::uint32_t dataSize ) noexcept {
@@ -85,6 +95,10 @@ esrDataResponseHeaderToRaw( BitsPerElement bpe, std::uint8_t dataPerElement, std
              { std::byte( bpe ) },
              { std::byte( dataPerElement ) },
              toBigEndianBytes< std::byte >( dataSize ) };
+}
+
+inline constexpr std::uint32_t nearestBytes( std::uint32_t leastSamples ) noexcept {
+    return asLeastNearestMultiple( leastSamples, core::Periph::Adc::Caps::digiDataBytesPerConv );
 }
 
 class EsrMeter final {
@@ -96,16 +110,16 @@ public:
     using AdcCali        = core::Periph::AdcCali;
 
     enum class VoltageAtten : std::underlying_type_t< dac_cosine_atten_t > {
-        dB_0 =
-        DAC_COSINE_ATTEN_DB_0, /*!< Original amplitude of the DAC cosine wave, equals to DAC_COSINE_ATTEN_DEFAULT */
+        dB_0  = DAC_COSINE_ATTEN_DB_0, /*!< Original amplitude of the DAC cosine
+                                       wave, equals to DAC_COSINE_ATTEN_DEFAULT */
         dB_6  = DAC_COSINE_ATTEN_DB_6, /*!< 1/2 amplitude of the DAC cosine wave */
         dB_12 = DAC_COSINE_ATTEN_DB_12, /*!< 1/4 amplitude of the DAC cosine wave */
         dB_18 = DAC_COSINE_ATTEN_DB_18, /*!< 1/8 amplitude of the DAC cosine wave */
     };
 
     struct CreateInfo final {
-        idf::GPIONum signalHi { 36 };
-        idf::GPIONum signalLow { 39 };
+        idf::GPIONum signalHi { 39 };
+        idf::GPIONum signalLow { 36 };
 
         FreqType adcLowSamplingRateHz { FreqType::KHz( 20 ) };
         FreqType adcHiSamplingRateHz { FreqType::MHz( 2 ) };
@@ -115,7 +129,7 @@ public:
     };
 
     EsrMeter() = default;
-    explicit EsrMeter( const CreateInfo & c, std::shared_ptr< Connect::TransferProtocol > transferProtocol ) :
+    EsrMeter( const CreateInfo & c, std::shared_ptr< Connect::TransferProtocol > transferProtocol ) :
     mAdcLowSamplingRate( c.adcLowSamplingRateHz ), mAdcHiSamplingRate( c.adcHiSamplingRateHz ),
     mDacLowSamplingRate( c.dacLowSamplingRateHz ), mDacHiSamplingRate( c.dacHiSamplingRateHz ),
     mNetProto( transferProtocol ) {}
@@ -143,38 +157,42 @@ public:
     EsrMeterInfo getInfo() const { return { mNetProto, /*mBpe, mDpe*/ }; }
 
 private:
-    static constexpr std::uint32_t nearestBytes( std::uint32_t leastSamples ) noexcept {
-        return asLeastNearestMultiple( leastSamples * Adc::Caps::digiResultBytes, Adc::Caps::digiDataBytesPerConv );
-    }
+    // static inline constexpr std::uint32_t nearestBytes( std::uint32_t leastSamples ) noexcept {
+    //     return asLeastNearestMultiple( leastSamples, Adc::Caps::digiDataBytesPerConv );
+    // }
 
     std::jthread mTransmitterThread;
 
-	Adc::Continuous::SamplingRate mAdcLowSamplingRate { FreqType::KHz( 20 ) };
-    Adc::Continuous::SamplingRate mAdcHiSamplingRate { FreqType::MHz( 2 ) };
+    Adc::Continuous::SamplingRate mAdcLowSamplingRate { FreqType::KHz( 30 ) };
+    Adc::Continuous::SamplingRate mAdcHiSamplingRate { Adc::Caps::sampleFreqThresHigh };
 
-    FreqType mDacLowSamplingRate { FreqType::Hz( 200 ) };
-    FreqType mDacHiSamplingRate { FreqType::KHz( 100 ) };
+    FreqType mDacLowSamplingRate { FreqType::Hz( 150 ) };
+    FreqType mDacHiSamplingRate { FreqType::KHz( 10 ) };
 
-    std::uint32_t mSamplesPerPocket { nearestBytes( 4096 ) / Adc::Caps::digiResultBytes };
-    std::uint32_t mBytesPerPocket { nearestBytes( mSamplesPerPocket ) };
+    // static inline constexpr std::uint32_t mBytesPerChannel { nearestBytes( 1024 ) };
+    static inline constexpr std::uint32_t mSamplesPerChannel { 512 };
 
-    idf::GPIONum mSignalHi { 36 };
-    idf::GPIONum mSignalLow { 39 };
+    idf::GPIONum mSignalHi { 39 };
+    idf::GPIONum mSignalLow { 36 };
 
-    VoltageAtten mDacCosineAtten { VoltageAtten::dB_6 };
+    VoltageAtten mDacCosineAtten { VoltageAtten::dB_18 };
+
+    // observed minimum value by ADC is 75mv. DAC offset should be incremented to +4
+    // 128 / (3000mv / 75mv) = 3.2 (4 with a rounding)
+    std::int8_t mDacCosineOffset { -( 128 * 7 / 8 - 8 ) };
 
     std::vector< AdcHandler::AdcDigiPatternConfig > mDigiPatterns {
-        { adc_atten_t::ADC_ATTEN_DB_12, mSignalHi, adc_bitwidth_t::ADC_BITWIDTH_12 },
-        { adc_atten_t::ADC_ATTEN_DB_12, mSignalLow, adc_bitwidth_t::ADC_BITWIDTH_12 },
+        { adc_atten_t::ADC_ATTEN_DB_0, mSignalHi, adc_bitwidth_t::ADC_BITWIDTH_12 },
+        { adc_atten_t::ADC_ATTEN_DB_0, mSignalLow, adc_bitwidth_t::ADC_BITWIDTH_12 },
     };
 
     std::shared_ptr< Connect::TransferProtocol > mNetProto { nullptr };
 
-    std::vector< adc_digi_output_data_t > mData =
-    std::vector< adc_digi_output_data_t >( mSamplesPerPocket * mDigiPatterns.size() );
+    std::vector< adc_continuous_data_t > mData =
+    std::vector< adc_continuous_data_t >( mSamplesPerChannel * mDigiPatterns.size() );
 
     std::vector< OutputDataType > mValues =
-    std::vector< OutputDataType >( mSamplesPerPocket * mDigiPatterns.size() * 3 );
+    std::vector< OutputDataType >( mSamplesPerChannel * mDigiPatterns.size() * 3 );
 };
 
 inline void EsrMeter::start() {
@@ -211,8 +229,8 @@ inline void EsrMeter::start() {
                                                           adc_bitwidth_t( mDigiPatterns.at( 0 ).get_value().bit_width ),
                                                           0 } );
 
-        auto calcValueFn = [ &caliHandler ]( auto el ) -> OutputDataType {
-            return caliHandler.rawToVoltage( el.type1.data ).get_value();
+        auto calcValueFn = [ &caliHandler ]( const adc_continuous_data_t & el ) -> OutputDataType {
+            return caliHandler.rawToVoltage( el.raw_data ).get_value();
         };
 
         std::span dataSpan( mData );
@@ -221,6 +239,7 @@ inline void EsrMeter::start() {
         const auto sigLow = mDigiPatterns[ 1 ].get_value().channel;
 
         constexpr auto dacChannel { DAC_CHAN_0 };
+        // idf::GPIO_Output( idf::GPIONum( 25 ) ).set_drive_strength( idf::GPIODriveStrength::STRONGEST() );
 
         auto createDacConfig = [ this ]( FreqType freq ) {
             return dac_cosine_config_t { dacChannel,
@@ -228,7 +247,7 @@ inline void EsrMeter::start() {
                                          DAC_COSINE_CLK_SRC_DEFAULT,
                                          dac_cosine_atten_t( std::to_underlying( mDacCosineAtten ) ),
                                          DAC_COSINE_PHASE_0,
-                                         0,
+                                         mDacCosineOffset,
                                          {} };
         };
         const std::array dacConfigs {
@@ -237,21 +256,21 @@ inline void EsrMeter::start() {
         };
 
         const auto       sizeOneValueRange = mValues.size() / 3;
-        const auto       sizeHalfRange     = sizeOneValueRange / mDigiPatterns.size();
+        const auto       lowOffset         = sizeOneValueRange / mDigiPatterns.size();
         const std::array measureRangesIters {
             std::make_pair( mValues.begin() + sizeOneValueRange * 0,
-                            mValues.begin() + sizeOneValueRange * 0 + sizeHalfRange ),
+                            mValues.begin() + sizeOneValueRange * 0 + lowOffset ),
             std::make_pair( mValues.begin() + sizeOneValueRange * 1,
-                            mValues.begin() + sizeOneValueRange * 1 + sizeHalfRange ),
+                            mValues.begin() + sizeOneValueRange * 1 + lowOffset ),
             std::make_pair( mValues.begin() + sizeOneValueRange * 2,
-                            mValues.begin() + sizeOneValueRange * 2 + sizeHalfRange ),
+                            mValues.begin() + sizeOneValueRange * 2 + lowOffset ),
         };
 
         const std::array measureFreqs {
             mAdcLowSamplingRate,
             mAdcHiSamplingRate,
         };
-        constexpr Adc::Continuous::SamplingRate sr = idf::Frequency::KHz( 1 );
+        // constexpr Adc::Continuous::SamplingRate sr = idf::Frequency::KHz( 1 );
 
         while ( !token.stop_requested() ) {
             try {
@@ -260,14 +279,16 @@ inline void EsrMeter::start() {
                     std::this_thread::sleep_for( 1s );
 
                 /// TODO: implement first measure with leakage current.
-                /// this will also allow to achieve the desired voltage on the capacitor.
+                /// this will also allow to achieve the desired voltage on the
+                /// capacitor.
 
-                // 6db atten is 1/2 and need 1/2 from this (1/4 of full range)?
-                constexpr std::uint8_t targetDigiValue = 256 / 4;
+                const std::uint8_t targetDigiValue = 128 + mDacCosineOffset;
 
+                std::println( "Set Low to lower that 100mv" );
                 auto dacOneshotHandler =
                 core::Periph::DacOneShot::create( dac_oneshot_config_t { .chan_id = dacChannel } );
                 dacOneshotHandler.outputVoltage( 0 );
+                // idf::GPIO_Output( idf::GPIONum( 25 ) ).set_drive_strength( idf::GPIODriveStrength::STRONGEST() );
                 std::this_thread::sleep_for( 100ms );
 
                 {
@@ -278,27 +299,79 @@ inline void EsrMeter::start() {
                                                .clk_src  = adc_oneshot_clk_src_t::ADC_RTC_CLK_SRC_DEFAULT,
                                                .ulp_mode = adc_ulp_mode_t::ADC_ULP_MODE_DISABLE } );
 
-                    while ( caliHandler.rawToVoltage( oneShotAdc.getOneShotValue( channelNum ) ) >
-                            AdcCali::Voltage::mV( 100 ) )
+                    std::println(
+                    "Unit is: {}, channel is: {}", int( unitNum.get_value() ), int( channelNum.get_value() ) );
+
+                    oneShotAdc.congigChannel(
+                    channelNum,
+                    adc_oneshot_chan_cfg_t { adc_atten_t( mDigiPatterns.at( 0 ).get_value().atten ),
+                                             adc_bitwidth_t( mDigiPatterns.at( 0 ).get_value().bit_width ) } );
+
+                    auto v = caliHandler.rawToVoltage( oneShotAdc.getOneShotValue( channelNum ) );
+                    while ( ( v = caliHandler.rawToVoltage( oneShotAdc.getOneShotValue( channelNum ) ) ) >
+                            AdcCali::Voltage::mV( 100 ) ) {
+                        std::println( "Low voltage is: {}", v.get_value() );
+                        std::this_thread::sleep_for( 30ms );
+                    }
+
+                    dacOneshotHandler.outputVoltage( 8 );
+                    // idf::GPIO_Output( idf::GPIONum( 25 ) ).set_drive_strength( idf::GPIODriveStrength::STRONGEST() );
+                    while ( ( v = caliHandler.rawToVoltage( oneShotAdc.getOneShotValue( channelNum ) ) ) <
+                            AdcCali::Voltage::mV( 100 ) ) {
                         std::this_thread::sleep_for( 10ms );
+                    }
+                    std::println( "Initial voltage: {}mv", v.get_value() );
+
+                    const auto targetVoltage = AdcCali::Voltage::mV( 3300 * 78 / 256 );
+                    std::println( "Target voltage: {}mv", targetVoltage.get_value() );
+                    dacOneshotHandler.outputVoltage( 78 );
+                    const auto oldTimestamp = std::chrono::high_resolution_clock::now();
+
+                    std::println( "Voltage: {}mv",
+                                  caliHandler.rawToVoltage( oneShotAdc.getOneShotValue( channelNum ) ).get_value() );
+
+                    // idf::GPIO_Output( idf::GPIONum( 25 ) ).set_drive_strength( idf::GPIODriveStrength::STRONGEST() );
+                    const int              initVolts = v.get_value();
+                    const AdcCali::Voltage voltage63percent( ( targetVoltage.get_value() - initVolts ) * 63 / 100 +
+                                                             initVolts );
+                    std::println( "63% voltage: {}mv", voltage63percent.get_value() );
+                    while ( ( v = caliHandler.rawToVoltage( oneShotAdc.getOneShotValue( channelNum ) ) ) <
+                            voltage63percent ) {
+                        std::this_thread::sleep_for( 1ms );
+                    }
+                    const auto newTimestamp = std::chrono::high_resolution_clock::now();
+
+                    const auto chargeDuration =
+                    std::chrono::duration_cast< std::chrono::milliseconds >( newTimestamp - oldTimestamp );
+                    constexpr int resistor = 110;
+                    std::println( "Target voltage in: {}, capacitance = {}",
+                                  chargeDuration,
+                                  -chargeDuration.count() * 1000 /
+                                  ( resistor * std::log( 1 - ( voltage63percent.get_value() - initVolts ) /
+                                                             double( targetVoltage.get_value() ) ) ) );
                 }
+                std::println( "Low is lower that 100mv" );
 
-                AdcHandler continueAdc =
-                Adc::createContinuous( { .max_store_buf_size = mBytesPerPocket * 2 * mDigiPatterns.size(),
-                                         .conv_frame_size    = mBytesPerPocket * mDigiPatterns.size(),
-                                         .flags              = { .flush_pool = true } } );
+                // static_assert( mBytesPerChannel == mSamplesPerChannel * Adc::Caps::digiResultBytes );
+                std::println( "Data buffer size: {} samples", dataSpan.size() );
 
-                continueAdc.configure(
+                const auto adcBufferSamples = dataSpan.size();
+                AdcHandler continuousAdc    = Adc::createContinuous( adcBufferSamples, adcBufferSamples, false );
+
+                continuousAdc.configure(
                 mDigiPatterns, mAdcLowSamplingRate, ADC_CONV_SINGLE_UNIT_1, ADC_DIGI_OUTPUT_FORMAT_TYPE1 );
-
-                continueAdc.start();
+                continuousAdc.flushPool();
 
                 dacOneshotHandler.outputVoltage( targetDigiValue );
+                idf::GPIO_Output( idf::GPIONum( 25 ) ).set_drive_strength( idf::GPIODriveStrength::STRONGEST() );
 
                 {
+                    continuousAdc.start();
+                    std::this_thread::sleep_for( mAdcLowSamplingRate.toDuration( mSamplesPerChannel ) * 2 );
+
                     const auto resultNum =
-                    continueAdc.read( std::as_writable_bytes( dataSpan ), std::chrono::milliseconds( ADC_MAX_DELAY ) )
-                    .resultNum;
+                    continuousAdc.readParse( dataSpan, std::chrono::milliseconds( ADC_MAX_DELAY ) );
+                    continuousAdc.stop();
 
                     if ( resultNum != sizeOneValueRange )
                         std::println( "------Read num don't equal the expected value num." );
@@ -309,59 +382,73 @@ inline void EsrMeter::start() {
                         std::tuple { sigLow, lowRangeIter },
                     };
                     for ( auto [ sigChannel, iter ] : contexts ) {
-                        auto digiesSig =
-                        dataSpan | std::views::as_const |
-                        std::views::filter( [ sigChannel ]( auto & el ) { return el.type1.channel == sigChannel; } ) |
-                        std::views::transform( calcValueFn );
+                        auto digiesSig = dataSpan | std::views::as_const |
+                                         std::views::filter( [ sigChannel ]( const adc_continuous_data_t & el ) {
+                                             return el.channel == sigChannel && el.valid;
+                                         } ) |
+                                         std::views::transform( calcValueFn );
 
                         std::ranges::copy( digiesSig, iter );
                     }
                 }
 
+                std::this_thread::sleep_for( std::chrono::seconds( 1 ) );
+                std::println( "Low to offset voltage" );
                 while ( !token.stop_requested() ) {
+                    continuousAdc.flushPool();
+                    continuousAdc.start();
+                    // std::this_thread::sleep_for( mAdcLowSamplingRate.toDuration( mSamplesPerChannel ) * 2 );
+
                     const auto resultNum =
-                    continueAdc.read( std::as_writable_bytes( dataSpan ), std::chrono::milliseconds( ADC_MAX_DELAY ) )
-                    .resultNum;
+                    continuousAdc.readParse( dataSpan, std::chrono::milliseconds( ADC_MAX_DELAY ) );
+                    continuousAdc.stop();
 
                     if ( resultNum != sizeOneValueRange )
                         std::println( "------Read num don't equal the expected value num." );
 
-                    auto projChannel = []( auto & el ) { return el.type1.channel; };
-                    auto digiSigHi   = std::ranges::find( dataSpan, sigHi, projChannel );
-                    auto digiSigLow  = std::ranges::find( dataSpan, sigLow, projChannel );
+                    auto projChannelFn = []( const adc_continuous_data_t & el ) { return el.channel; };
+                    auto digiSigLow    = std::ranges::find_last( dataSpan, sigLow, projChannelFn );
 
-                    if ( digiSigHi == dataSpan.end() || digiSigLow == dataSpan.end() )
+                    if ( digiSigLow.empty() )
                         throw std::runtime_error( "------[Target voltage wait] Channel is not find!!!" );
 
-                    const double valHi  = calcValueFn( *digiSigHi );
-                    const double valLow = calcValueFn( *digiSigLow );
-                    if ( ( valHi / valLow ) > 0.98 )
+                    const double valLow = calcValueFn( digiSigLow.front() );
+                    if ( valLow > ( double( 3300 ) * targetDigiValue / 256 * 0.9 ) )
                         break;
-                    std::this_thread::sleep_for( 100ms );
+                    std::this_thread::sleep_for( 1000ms );
                 }
+                std::println( "Low is offset voltage" );
 
-                continueAdc.stop();
                 dacOneshotHandler.release();
 
-                static_assert( measureRangesIters.size() - 1 == dacConfigs.size() &&
+                constexpr unsigned needForSkip = 1;
+                static_assert( measureRangesIters.size() - needForSkip == dacConfigs.size() &&
                                dacConfigs.size() == measureFreqs.size() );
 
-                for ( auto [ r, dacConf, adcFreq ] :
-                      std::views::zip( measureRangesIters | std::views::drop( 1 ), dacConfigs, measureFreqs ) ) {
-                    continueAdc.configure(
+                // std::this_thread::sleep_for( std::chrono::seconds( 1 ) );
+                std::println( "Main measure start." );
+                for ( auto [ r, dacConf, adcFreq ] : std::views::zip(
+                      measureRangesIters | std::views::drop( needForSkip ), dacConfigs, measureFreqs ) ) {
+                    continuousAdc.configure(
                     mDigiPatterns, adcFreq, ADC_CONV_SINGLE_UNIT_1, ADC_DIGI_OUTPUT_FORMAT_TYPE1 );
 
-                    // TODO: maybe better implement lock|unlock methods for std::lock_guard?
+                    // TODO: maybe better implement lock|unlock methods for
+                    // std::lock_guard?
+                    //
                     auto dacHandler = core::Periph::DacCosine::createWithAutoStop( dacConf );
+                    // idf::GPIO_Output( idf::GPIONum( 25 ) ).set_drive_strength( idf::GPIODriveStrength::STRONGEST() );
                     dacHandler.start();
+                    idf::GPIO_Output( idf::GPIONum( 25 ) ).set_drive_strength( idf::GPIODriveStrength::STRONGEST() );
+                    std::this_thread::sleep_for( 2s );
 
-                    continueAdc.start();
+                    continuousAdc.flushPool();
+                    continuousAdc.start();
+                    // std::this_thread::sleep_for( adcFreq.toDuration( mSamplesPerChannel ) * 2 );
 
                     const auto resultNum =
-                    continueAdc.read( std::as_writable_bytes( dataSpan ), std::chrono::milliseconds( ADC_MAX_DELAY ) )
-                    .resultNum;
+                    continuousAdc.readParse( dataSpan, std::chrono::milliseconds( ADC_MAX_DELAY ) );
 
-                    continueAdc.stop();
+                    continuousAdc.stop();
 
                     if ( resultNum != sizeOneValueRange )
                         std::println( "------Read num don't equal the expected value num." );
@@ -373,25 +460,32 @@ inline void EsrMeter::start() {
                         std::tuple { sigLow, lowRangeIter },
                     };
                     for ( auto [ sigChannel, iter ] : contexts ) {
-                        auto digiesSig =
-                        dataSpan | std::views::as_const |
-                        std::views::filter( [ sigChannel ]( auto & el ) { return el.type1.channel == sigChannel; } ) |
-                        std::views::transform( calcValueFn );
+                        auto digiesSig = dataSpan | std::views::as_const |
+                                         std::views::filter( [ sigChannel ]( const adc_continuous_data_t & el ) {
+                                             return el.channel == sigChannel && el.valid;
+                                         } ) |
+                                         std::views::transform( calcValueFn );
 
                         std::ranges::copy( digiesSig, iter );
                     }
                 }
+                std::println( "Main measure stop." );
 
+                // std::ranges::fill( mValues, 150 );
                 std::span values( mValues );
+                std::println( "------mValues size: {}", mValues.size() );
 
+                static constexpr std::array< char, 64 > magic { "EsrMeter 42 42 i tak soydet!!!" };
+
+                transmitter->write( std::as_bytes( std::span( magic ) ) );
                 transmitter->write( std::as_bytes( values ) );
 
-                using namespace std::chrono_literals;
-                std::this_thread::sleep_for( 5s );
             } catch ( const asio::system_error & e ) { stop(); } catch ( const std::bad_alloc & e ) {
                 std::println( "------Sending error: {}", e.what() );
                 transmitter->waitForDone();
             } catch ( const std::exception & e ) { std::print( "------Sending error: {}\n", e.what() ); }
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for( 1s );
         }
     } );
 }

@@ -48,6 +48,8 @@ public:
         eMax = WIFI_IF_MAX
     };
 
+    enum class TxPower : std::int8_t {};
+
     static void init() {
         if ( isInited )
             return;
@@ -144,11 +146,13 @@ public:
         CHECK_THROW( esp_wifi_set_storage( static_cast< wifi_storage_t >( storage ) ) );
     }
 
-    static void        setMaxTxPower( std::int8_t power ) { CHECK_THROW( esp_wifi_set_max_tx_power( power ) ); }
-    static std::int8_t getMaxTxPower() {
+    static void setMaxTxPower( TxPower power ) {
+        CHECK_THROW( esp_wifi_set_max_tx_power( std::to_underlying( power ) ) );
+    }
+    static TxPower getMaxTxPower() {
         std::int8_t v;
         CHECK_THROW( esp_wifi_get_max_tx_power( &v ) );
-        return v;
+        return TxPower( v );
     }
 
 private:

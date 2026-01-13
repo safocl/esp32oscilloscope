@@ -1,19 +1,13 @@
-#include <array>
-#include <esp_netif.h>
-#include <esp_netif_ip_addr.h>
-#include <esp_netif_types.h>
-#include <esp_event_cxx.hpp>
 #include <driver/uart.h>
-#include <driver/dac_cosine.h>
+#include <esp_event_cxx.hpp>
 
 #include "connect.hpp"
 #include "esp_exception.hpp"
+#include "esrMeter.hpp"
 #include "hal/uart_types.h"
 #include "netif.hpp"
-#include "esrMeter.hpp"
 #include "soc/clk_tree_defs.h"
 #include "wifi.hpp"
-#include "dac.hpp"
 
 #include <asio/ip/address_v4.hpp>
 
@@ -28,10 +22,10 @@
 #include <type_traits>
 #include <vector>
 
-using Connect::Wifi;
-using Connect::TransferProtocol;
 using Connect::IpV4;
 using Connect::Port;
+using Connect::TransferProtocol;
+using Connect::Wifi;
 
 extern "C" int app_main() {
     try {
@@ -57,7 +51,7 @@ extern "C" int app_main() {
             throw std::runtime_error( "DHCP flag not selected.!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" );
 
         Wifi::start();
-        Wifi::setMaxTxPower( 8 );
+        Wifi::setMaxTxPower( Wifi::TxPower( 8 ) );
 
         esp_netif_ip_info_t ipInfo { .ip      = IpV4( "192.168.88.1" ),
                                      .netmask = IpV4( "255.255.255.0" ),
@@ -98,20 +92,20 @@ extern "C" int app_main() {
                 osc1.stop( true );
                 osc1.setTransferProtocol( TransferProtocol::create( remoteIp, remotePort, localIp, localPort ) );
                 osc1.start();
-                std::print( "-------Endpoint: {}:{} added.\n", to_string( remoteIp ), to_string( remotePort ) );
+                std::println( "-------Endpoint: {}:{} added.", to_string( remoteIp ), to_string( remotePort ) );
 
-            } catch ( const std::exception & e ) { std::print( "-------Endpoint event handler: {}\n", e.what() ); }
+            } catch ( const std::exception & e ) { std::println( "-------Endpoint event handler: {}", e.what() ); }
         } ) );
 
-    } catch ( const std::exception & e ) { std::print( "MAIN EXCEPTION: {}\n", e.what() ); }
+    } catch ( const std::exception & e ) { std::println( "MAIN EXCEPTION: {}", e.what() ); }
 
-#if 0
-    using namespace std::chrono_literals;
-    while ( true ) {
-        std::print( "------endless while \n" );
-        std::this_thread::sleep_for( 1000ms );
+    if constexpr ( false ) {
+        using namespace std::chrono_literals;
+        while ( true ) {
+            std::println( "------endless while" );
+            std::this_thread::sleep_for( 1000ms );
+        }
     }
-#endif
 
     return 0;
 }
