@@ -3,7 +3,7 @@ CompileFlags:
   #   [--target=xtensa-esp32]
   #   [-I/home/safocl/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20251107/xtensa-esp-elf/xtensa-esp-elf/include/c++/14.2.0, -I/home/safocl/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20251107/xtensa-esp-elf/xtensa-esp-elf/include/c++/14.2.0/xtensa-esp-elf/esp32, -I/home/safocl/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20251107/xtensa-esp-elf/picolibc/include, -I/home/safocl/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20251107/xtensa-esp-elf/xtensa-esp-elf/include, -I/home/safocl/.espressif/v5.5.2/esp-idf/components/freertos/config/include]
   CompilationDatabase: /home/safocl/git/esp32oscilloscope/build
-  # QueryDriver: /home/safocl/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20251107/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc
+  # QueryDriver: /home/safocl/.espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/bin/xtensa-esp32-elf-g++
   # QueryDriver: /home/safocl/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clang++
   # QueryDriver: '.*'
   Remove: [-f*, -m*]

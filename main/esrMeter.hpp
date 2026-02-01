@@ -41,8 +41,9 @@
 /***
  * Scheme:
  * DAC_voltage 0------*----[==]----*----||----*----0 GND
- *                    |            |          |
- *                 ADC_Hi       ADC_Low      GND
+ *                    |            |          |    |
+ *                     \__________/ \________/     |
+ *                     RrefVoltage   CxVoltage    GND
  */
 
 namespace Esr {
@@ -118,8 +119,8 @@ public:
     };
 
     struct CreateInfo final {
-        idf::GPIONum signalHi { 39 };
-        idf::GPIONum signalLow { 36 };
+        idf::GPIONum signalRref { 39 };
+        idf::GPIONum signalCx { 36 };
 
         FreqType adcLowSamplingRateHz { FreqType::KHz( 20 ) };
         FreqType adcHiSamplingRateHz { FreqType::MHz( 2 ) };
@@ -169,11 +170,10 @@ private:
     FreqType mDacLowSamplingRate { FreqType::Hz( 150 ) };
     FreqType mDacHiSamplingRate { FreqType::KHz( 10 ) };
 
-    // static inline constexpr std::uint32_t mBytesPerChannel { nearestBytes( 1024 ) };
     static inline constexpr std::uint32_t mSamplesPerChannel { 512 };
 
-    idf::GPIONum mSignalHi { 39 };
-    idf::GPIONum mSignalLow { 36 };
+    idf::GPIONum mSignalRref { 39 };
+    idf::GPIONum mSignalCx { 36 };
 
     VoltageAtten mDacCosineAtten { VoltageAtten::dB_18 };
 
@@ -182,8 +182,8 @@ private:
     std::int8_t mDacCosineOffset { -( 128 * 7 / 8 - 8 ) };
 
     std::vector< AdcHandler::AdcDigiPatternConfig > mDigiPatterns {
-        { adc_atten_t::ADC_ATTEN_DB_0, mSignalHi, adc_bitwidth_t::ADC_BITWIDTH_12 },
-        { adc_atten_t::ADC_ATTEN_DB_0, mSignalLow, adc_bitwidth_t::ADC_BITWIDTH_12 },
+        { adc_atten_t::ADC_ATTEN_DB_0, mSignalRref, adc_bitwidth_t::ADC_BITWIDTH_12 },
+        { adc_atten_t::ADC_ATTEN_DB_0, mSignalCx, adc_bitwidth_t::ADC_BITWIDTH_12 },
     };
 
     std::shared_ptr< Connect::TransferProtocol > mNetProto { nullptr };
@@ -292,7 +292,7 @@ inline void EsrMeter::start() {
                 std::this_thread::sleep_for( 100ms );
 
                 {
-                    const auto [ unitNum, channelNum ] = Adc::OneShot::ioToChannel( mSignalLow );
+                    const auto [ unitNum, channelNum ] = Adc::OneShot::ioToChannel( mSignalCx );
 
                     auto oneShotAdc = Adc::createOneShot(
                     Adc::OneShot::InitConfig { .unit_id  = unitNum.get_value(),
@@ -322,13 +322,13 @@ inline void EsrMeter::start() {
                     }
                     std::println( "Initial voltage: {}mv", v.get_value() );
 
-                    const auto targetVoltage = AdcCali::Voltage::mV( 3300 * 78 / 256 );
+                    constexpr auto targetVoltage = AdcCali::Voltage::mV( 3300 * 78 / 256 );
                     std::println( "Target voltage: {}mv", targetVoltage.get_value() );
                     dacOneshotHandler.outputVoltage( 78 );
                     const auto oldTimestamp = std::chrono::high_resolution_clock::now();
 
-                    std::println( "Voltage: {}mv",
-                                  caliHandler.rawToVoltage( oneShotAdc.getOneShotValue( channelNum ) ).get_value() );
+                    // std::println( "Voltage: {}mv",
+                    //               caliHandler.rawToVoltage( oneShotAdc.getOneShotValue( channelNum ) ).get_value() );
 
                     // idf::GPIO_Output( idf::GPIONum( 25 ) ).set_drive_strength( idf::GPIODriveStrength::STRONGEST() );
                     const int              initVolts = v.get_value();

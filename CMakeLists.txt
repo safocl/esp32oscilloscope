@@ -1,7 +1,7 @@
-cmake_minimum_required(VERSION 3.16.0)
+cmake_minimum_required(VERSION 3.22.0)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-list(APPEND EXTRA_COMPONENT_DIRS src)
+# list(APPEND EXTRA_COMPONENT_DIRS main)
 
 set( CMAKE_EXPORT_COMPILE_COMMANDS ON )
 # set( CMAKE_CXX_STANDARD 23 REQUIRED )
