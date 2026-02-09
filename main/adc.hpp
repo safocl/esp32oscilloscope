@@ -65,27 +65,31 @@ public:
     /**
      * @brief A special adc unit number representation and make sure it's correct.
      */
-    class AdcUnitNum final : public StrongValueComparable< adc_unit_t > {
+    class AdcUnitNum final : StrongValueComparable< adc_unit_t > {
     public:
         using NativeType = adc_unit_t;
 
-        constexpr explicit AdcUnitNum( adc_unit_t unit ) : StrongValueComparable< NativeType >( unit ) {}
+        constexpr explicit AdcUnitNum( adc_unit_t unit ) : StrongValueComparable( unit ) {}
 
-        using StrongValueComparable< NativeType >::operator==;
-        using StrongValueComparable< NativeType >::operator!=;
+        using StrongValueComparable::operator==;
+        using StrongValueComparable::operator!=;
+
+        using StrongValueComparable::get_value;
     };
 
     /**
      * @brief A special adc channel number representation and make sure it's correct.
      */
-    class AdcChannelNum final : public StrongValueComparable< adc_channel_t > {
+    class AdcChannelNum final : StrongValueComparable< adc_channel_t > {
     public:
         using NativeType = adc_channel_t;
 
-        constexpr explicit AdcChannelNum( adc_channel_t unit ) : StrongValueComparable< NativeType >( unit ) {}
+        constexpr explicit AdcChannelNum( adc_channel_t unit ) : StrongValueComparable( unit ) {}
 
-        using StrongValueComparable< NativeType >::operator==;
-        using StrongValueComparable< NativeType >::operator!=;
+        using StrongValueComparable::operator==;
+        using StrongValueComparable::operator!=;
+
+        using StrongValueComparable::get_value;
     };
 
     // struct ChannelInfo final {
@@ -102,48 +106,22 @@ public:
         using Handle        = adc_oneshot_unit_handle_t;
 
     private:
-        struct Construct final {
-            Handle operator()( InitConfig && c ) const {
-                Handle h {};
-                CHECK_THROW( adc_oneshot_new_unit( &c, &h ) );
-                return h;
-            }
-        };
-
         struct Deleter final {
             void operator()( Handle h ) { CHECK_THROW( adc_oneshot_del_unit( h ) ); }
         };
 
-        OneShot( InitConfig && c ) : mHandle( Construct()( std::move( c ) ) ) {}
+        OneShot( InitConfig && c );
 
     public:
         ~OneShot() { Deleter()( mHandle ); }
 
-        void congigChannel( AdcChannelNum chan, adc_oneshot_chan_cfg_t config ) {
-            CHECK_THROW( adc_oneshot_config_channel( mHandle, chan.get_value(), &config ) );
-        }
+        void congigChannel( AdcChannelNum chan, adc_oneshot_chan_cfg_t config );
 
-        int getOneShotValue( AdcChannelNum chan ) {
-            int v;
-            CHECK_THROW( adc_oneshot_read( mHandle, chan.get_value(), &v ) );
-            return v;
-        }
+        int getOneShotValue( AdcChannelNum chan );
 
-        static std::tuple< AdcUnitNum, AdcChannelNum > ioToChannel( idf::GPIONum pin ) {
-            adc_unit_t    unit;
-            adc_channel_t channel;
-            CHECK_THROW( adc_oneshot_io_to_channel( pin.get_value(), &unit, &channel ) );
+        static std::tuple< AdcUnitNum, AdcChannelNum > ioToChannel( idf::GPIONum pin );
 
-            return { AdcUnitNum( unit ), AdcChannelNum( channel ) };
-        }
-
-        static idf::GPIONum channelToIo( std::tuple< AdcUnitNum, AdcChannelNum > info ) {
-            int ret;
-            CHECK_THROW( adc_oneshot_channel_to_io(
-            std::get< AdcUnitNum >( info ).get_value(), std::get< AdcChannelNum >( info ).get_value(), &ret ) );
-
-            return idf::GPIONum( ret );
-        }
+        static idf::GPIONum channelToIo( std::tuple< AdcUnitNum, AdcChannelNum > info );
 
     private:
         Handle mHandle;
@@ -169,26 +147,23 @@ public:
             using StrongValue::get_value;
         };
 
-        class AdcDigiPatternConfig final {
+        class AdcDigiPatternConfig final : public adc_digi_pattern_config_t {
         public:
             using NativeType = adc_digi_pattern_config_t;
             AdcDigiPatternConfig( adc_atten_t atten, idf::GPIONum gpio, adc_bitwidth_t bitwidth ) :
-            v( [ & ]() {
+            adc_digi_pattern_config_t( [ = ]() {
                 const auto [ unitNum, channelNum ] = ioToChannel( gpio );
-                return NativeType { std::uint8_t( atten ),
-                                    std::uint8_t( channelNum.get_value() ),
-                                    std::uint8_t( unitNum.get_value() ),
-                                    std::uint8_t( adc_bitwidth_t::ADC_BITWIDTH_12 ) };
+                return NativeType { static_cast< decltype( NativeType::atten ) >( atten ),
+                                    static_cast< decltype( NativeType::channel ) >( channelNum.get_value() ),
+                                    static_cast< decltype( NativeType::unit ) >( unitNum.get_value() ),
+                                    static_cast< decltype( NativeType::bit_width ) >( bitwidth ) };
             }() ) {
-                static_assert( std::is_standard_layout_v< AdcDigiPatternConfig > &&
-                               sizeof( AdcDigiPatternConfig ) == sizeof( NativeType ),
-                               "it is necessary to be able to cast a pointer to a native type in arrays (and back)." );
+                static_assert(
+                std::is_standard_layout_v< AdcDigiPatternConfig > &&
+                std::is_pointer_interconvertible_base_of_v< adc_digi_pattern_config_t, AdcDigiPatternConfig > &&
+                sizeof( AdcDigiPatternConfig ) == sizeof( NativeType ),
+                "it is necessary to be able to cast a pointer to a native type in arrays (and back)." );
             }
-
-            NativeType get_value() const { return v; }
-
-        private:
-            NativeType v;
         };
 
         class SamplingRate final : idf::Frequency {
@@ -253,22 +228,18 @@ public:
 			 * https://eel.is/c++draft/basic.compound#5
 			 * https://eel.is/c++draft/class.prop#10
 			*/
-            static_assert( std::is_standard_layout_v< AdcDigiPatternConfig > );
+            static_assert(
+            std::is_standard_layout_v< AdcDigiPatternConfig > &&
+            std::is_pointer_interconvertible_base_of_v< AdcDigiPatternConfig::NativeType, AdcDigiPatternConfig > &&
+            sizeof( AdcDigiPatternConfig ) == sizeof( AdcDigiPatternConfig::NativeType ),
+            "it is necessary to be able to cast a pointer to a native type in arrays (and back)." );
 
-            //clangd is not support std::is_pointer_interconvertible_with_class
-            // #ifndef __clang__
-            //             static_assert(
-            //             std::is_pointer_interconvertible_with_class< AdcDigiPatternConfig, adc_digi_pattern_config_t >(
-            //             &AdcDigiPatternConfig::v ) );
-            // #endif
-            std::span< adc_digi_pattern_config_t > nativeTypePatternsSpan(
-            reinterpret_cast< adc_digi_pattern_config_t * >( adcPatterns.data() ), adcPatterns.size() );
-
-            configure( { .pattern_num    = nativeTypePatternsSpan.size(),
-                         .adc_pattern    = nativeTypePatternsSpan.data(),
+            configure( { .pattern_num    = adcPatterns.size(),
+                         .adc_pattern    = adcPatterns.data(),
                          .sample_freq_hz = samplingRate.get_value(),
                          .conv_mode      = convMode,
-                         .format         = format } );
+                         /// FIXME: rewrite to clear deprecated
+                         .format = format } );
         }
 
         template < class OnConvDone, class OnPoolOverflow >
@@ -329,14 +300,10 @@ public:
         Handle mHandle;
     };
 
-    static Continuous createContinuous( Continuous::InitConfig && cfg ) { return Continuous( std::move( cfg ) ); }
+    static Continuous createContinuous( Continuous::InitConfig && cfg );
     static Continuous
-    createContinuous( Continuous::Samples maxStoreBuf, Continuous::Samples convFrames, bool isFlushPool ) {
-        return Continuous( { .max_store_buf_size = maxStoreBuf.get_value(),
-                             .conv_frame_size    = convFrames.get_value(),
-                             .flags              = { .flush_pool = isFlushPool } } );
-    }
-    static OneShot createOneShot( OneShot::InitConfig && cfg ) { return OneShot( std::move( cfg ) ); }
+    createContinuous( Continuous::Samples maxStoreBuf, Continuous::Samples convFrames, bool isFlushPool );
+    static OneShot createOneShot( OneShot::InitConfig && cfg );
 };
 
 class AdcCali final {

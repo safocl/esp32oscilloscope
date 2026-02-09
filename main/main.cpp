@@ -22,70 +22,12 @@
 #include <stdexcept>
 #include <string_view>
 #include <thread>
-#include <type_traits>
 #include <vector>
 
 using Connect::IpV4;
 using Connect::Port;
 using Connect::TransferProtocol;
 using Connect::Wifi;
-
-struct WifiApConfig : wifi_ap_config_t {
-    struct CreateInfo final {
-        uint8_t                    ssid_len             = {};
-        uint8_t                    channel              = {};
-        wifi_auth_mode_t           authmode             = {};
-        uint8_t                    ssid_hidden          = {};
-        uint8_t                    max_connection       = {};
-        uint16_t                   beacon_interval      = {};
-        uint8_t                    csa_count            = {};
-        uint8_t                    dtim_period          = {};
-        wifi_cipher_type_t         pairwise_cipher      = {};
-        bool                       ftm_responder        = {};
-        wifi_pmf_config_t          pmf_cfg              = {};
-        wifi_sae_pwe_method_t      sae_pwe_h2e          = {};
-        uint8_t                    transition_disable   = {};
-        uint8_t                    sae_ext              = {};
-        uint8_t                    wpa3_compatible_mode = {};
-        uint8_t                    reserved             = {};
-        wifi_bss_max_idle_config_t bss_max_idle_cfg     = {};
-        uint16_t                   gtk_rekey_interval   = {};
-    };
-
-    constexpr WifiApConfig( std::span< const std::byte > ssid,
-                            std::span< const std::byte > password,
-                            CreateInfo &&                ci ) :
-    wifi_ap_config_t( {},
-                      {},
-                      ci.ssid_len,
-                      ci.channel,
-                      ci.authmode,
-                      ci.ssid_hidden,
-                      ci.max_connection,
-                      ci.beacon_interval,
-                      ci.csa_count,
-                      ci.dtim_period,
-                      ci.pairwise_cipher,
-                      ci.ftm_responder,
-                      ci.pmf_cfg,
-                      ci.sae_pwe_h2e,
-                      ci.transition_disable,
-                      ci.sae_ext,
-                      ci.wpa3_compatible_mode,
-                      ci.reserved,
-                      ci.bss_max_idle_cfg,
-                      ci.gtk_rekey_interval ) {
-        assert( ssid.size() <= std::ranges::size( this->ssid ) );
-        assert( password.size() <= std::ranges::size( this->password ) );
-
-        std::ranges::copy( ssid | std::views::transform( []( auto el ) { return static_cast< std::uint8_t >( el ); } ),
-                           this->ssid );
-
-        std::ranges::copy( password |
-                           std::views::transform( []( auto el ) { return static_cast< std::uint8_t >( el ); } ),
-                           this->password );
-    }
-};
 
 extern "C" int app_main() {
     try {
@@ -98,25 +40,15 @@ extern "C" int app_main() {
         constexpr std::string_view ssid     = "esp32osc";
         constexpr std::string_view password = "esp32osc";
 
-        // constexpr wifi_ap_config_t apConf {};
-        // apConf.ssid           = "esp32osc",
-        //    apConf                                    .password       = "esp32osc",
-        //    apConf                                    .channel        = 5,
-        //    apConf                                    .authmode       = wifi_auth_mode_t::WIFI_AUTH_WPA2_PSK,
-        //    apConf                                    .max_connection = 5,
-        //    apConf                                    .pmf_cfg        = { .required = true } };
+        wifi_config_t cfg = { .ap = Wifi::ApConfig(
+                              std::as_bytes( std::span( ssid ) ),
+                              std::as_bytes( std::span( password ) ),
+                              Wifi::ApConfig::CreateInfo { .channel        = 5,
+                                                           .authmode       = wifi_auth_mode_t::WIFI_AUTH_WPA2_PSK,
+                                                           .max_connection = 5,
+                                                           .pmf_cfg        = { .capable = {}, .required = true }
 
-        wifi_config_t cfg = { .ap =
-                              WifiApConfig( std::as_bytes( std::span( ssid ) ),
-                                            std::as_bytes( std::span( password ) ),
-                                            WifiApConfig::CreateInfo { .channel  = 5,
-                                                                       .authmode = wifi_auth_mode_t::WIFI_AUTH_WPA2_PSK,
-                                                                       .max_connection = 5,
-                                                                       .pmf_cfg = { .capable = {}, .required = true }
-
-                                            } ) };
-        // static_assert(std::is_pointer_interconvertible_with_class(&wifi_config_t::ap) );
-        // static_assert(std::is_pointer_interconvertible_with_class<wifi_config_t, wifi_ap_config_t>(&wifi_config_t::ap) );
+                              } ) };
 
         static core::NetIfHandler wifiIfHandler =
         Wifi::createDefaultWithHandler< Connect::ApProvider >( cfg, Wifi::Storage::eRam );
