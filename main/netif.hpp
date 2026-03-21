@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <esp_netif_types.h>
 #include <esp_netif.h>
 #include <esp_exception.hpp>
@@ -11,6 +13,49 @@
 #include <string_view>
 
 namespace core {
+class MacAddress final {
+public:
+    using OctetType     = std::uint8_t;
+    using ArrayOfOctets = std::array< OctetType, 6 >;
+
+    constexpr MacAddress() = default;
+    constexpr explicit MacAddress( ArrayOfOctets octets ) : mOctets( octets ) {}
+    constexpr explicit MacAddress( std::string_view ipStr ) { from( ipStr ); }
+
+    constexpr void from( ArrayOfOctets octets ) { mOctets = octets; }
+    constexpr void from( std::string_view ipStr ) {
+        static_assert( 1 == sizeof( ArrayOfOctets::value_type ) );
+
+        ArrayOfOctets a;
+
+        for ( auto & el : a ) {
+            auto [ ptr, ec ] = std::from_chars( ipStr.data(), ipStr.data() + ipStr.size(), el );
+            if ( ec != std::errc() )
+                throw std::runtime_error( "MAC string is invalid." );
+            ipStr.remove_prefix(
+            std::ranges::min( std::distance( ipStr.data(), ptr ) + 1, std::ranges::ssize( ipStr ) ) );
+        }
+
+        mOctets = a;
+    }
+
+    constexpr ArrayOfOctets &       asOctets() { return mOctets; }
+    constexpr const ArrayOfOctets & asOctets() const { return mOctets; }
+    std::string                     asString() const {
+        return std::format(
+        "{}:{}:{}:{}:{}:{}", mOctets[ 0 ], mOctets[ 1 ], mOctets[ 2 ], mOctets[ 3 ], mOctets[ 4 ], mOctets[ 5 ] );
+    }
+
+    constexpr const OctetType & operator[]( ArrayOfOctets::size_type pos ) const { return mOctets.at( pos ); }
+    constexpr OctetType &       operator[]( ArrayOfOctets::size_type pos ) { return mOctets.at( pos ); }
+
+private:
+    ArrayOfOctets mOctets;
+};
+
+inline std::string to_string( MacAddress address ) { return address.asString(); }
+
+constexpr inline MacAddress::ArrayOfOctets to_array( MacAddress address ) { return address.asOctets(); }
 
 class NetIf;
 class NetIfHandler;
@@ -111,17 +156,23 @@ public:
 
     void attach( esp_netif_iodriver_handle driver_handle ) { esp_netif_attach( *this, driver_handle ); }
 
-    void receive( void * buffer, size_t len, void * eb ) { esp_netif_receive( *this, buffer, len, eb ); }
+    void receive( std::span< std::byte > buffer, void * eb ) {
+        esp_netif_receive( *this, buffer.data(), buffer.size(), eb );
+    }
 
     void setDefaultNetif() { esp_netif_set_default_netif( *this ); }
 
-    void joinIp6Multicast_group( const esp_ip6_addr_t * addr ) { esp_netif_join_ip6_multicast_group( *this, addr ); }
+    void joinIp6Multicast_group( const esp_ip6_addr_t & addr ) { esp_netif_join_ip6_multicast_group( *this, &addr ); }
 
-    void leaveIp6MulticastGroup( const esp_ip6_addr_t * addr ) { esp_netif_leave_ip6_multicast_group( *this, addr ); }
+    void leaveIp6MulticastGroup( const esp_ip6_addr_t & addr ) { esp_netif_leave_ip6_multicast_group( *this, &addr ); }
 
-    void setMac( uint8_t mac[] ) { esp_netif_set_mac( *this, mac ); }
+    void setMac( MacAddress & mac ) { CHECK_THROW( esp_netif_set_mac( *this, mac.asOctets().data() ) ); }
 
-    void getMac( uint8_t mac[] ) { esp_netif_get_mac( *this, mac ); }
+    MacAddress getMac() {
+        MacAddress mac;
+        CHECK_THROW( esp_netif_get_mac( *this, mac.asOctets().data() ) );
+        return mac;
+    }
 
     void setHostname( std::string_view hostname ) { esp_netif_set_hostname( *this, hostname.data() ); }
 

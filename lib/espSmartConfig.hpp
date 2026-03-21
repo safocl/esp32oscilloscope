@@ -77,7 +77,7 @@ public:
         ESPEvent( SC_EVENT, ESPEventID( SC_EVENT_GOT_SSID_PSWD ) ), [ this ]( const ESPEvent & event, void * params ) {
             std::cout << "Got SSID and password\n";
 
-            auto evt = reinterpret_cast< const smartconfig_event_got_ssid_pswd_t * >( params );
+            auto evt = static_cast< const smartconfig_event_got_ssid_pswd_t * >( params );
 
             wifi_config_t wifi_config;
             bzero( &wifi_config, sizeof( wifi_config_t ) );

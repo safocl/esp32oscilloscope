@@ -1,7 +1,0 @@
-CompileFlags:
-  Remove: [-fno-shrink-wrap, -mlongcalls, -fstrict-volatile-bitfields, -fno-tree-switch-conversion]
-  Add: [--target=xtensa-esp-elf, -mcpu=esp32, -ferror-limit=0, -I/home/safocl/.platformio/packages/toolchain-xtensa-esp32/xtensa-esp32-elf/include/c++/12.2.0/xtensa-esp32-elf, -I/home/safocl/.platformio/packages/toolchain-xtensa-esp32/xtensa-esp32-elf/include/c++/12.2.0, -I/home/safocl/.platformio/packages/toolchain-xtensa-esp32/xtensa-esp32-elf/include]
-  # Add: [--target=xtensa-esp-elf, -mcpu=esp32, -ferror-limit=0, -I/home/safocl/.platformio/packages/toolchain-xtensa-esp32/xtensa-esp32-elf/include/c++/12.2.0/xtensa-esp32-elf, -isysroot=/home/safocl/.platformio/packages/toolchain-xtensa-esp32/xtensa-esp32-elf/sys-include, -I/home/safocl/.platformio/packages/toolchain-xtensa-esp32/xtensa-esp32-elf/include/c++/12.2.0, -I/home/safocl/.platformio/packages/toolchain-xtensa-esp32/xtensa-esp32-elf/include, -I/home/safocl/.platformio/packages/framework-espidf/components/*/include, -I/home/safocl/.platformio/packages/framework-espidf/components/esp_common/include]
-
-  Compiler: /home/safocl/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-g++
-  # Compiler: /home/safocl/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-gcc,/home/safocl/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-g++
