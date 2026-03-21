@@ -32,7 +32,8 @@ using Connect::Wifi;
 
 std::jthread                        mTransmitterThread {};
 std::shared_ptr< TransferProtocol > mNetProto;
-extern "C" int                      app_main() {
+
+extern "C" int app_main() {
     try {
         static idf::event::ESPEventLoop loop {};
 
@@ -123,24 +124,41 @@ extern "C" int                      app_main() {
                             dac_cosine_new_channel( &conf, &h );
                             dac_cosine_start( h );
 
-                            adc_unit_t    unit;
-                            adc_channel_t channel;
-                            ESP_ERROR_CHECK( adc_continuous_io_to_channel( 36, &unit, &channel ) );
-                            adc_digi_pattern_config_t pattern { adc_atten_t::ADC_ATTEN_DB_12,
-                                                                static_cast< std::uint8_t >( channel ),
-                                                                static_cast< std::uint8_t >( unit ),
-                                                                adc_bitwidth_t::ADC_BITWIDTH_12 };
+                            adc_unit_t    unit1;
+                            adc_channel_t channel1;
+                            ESP_ERROR_CHECK( adc_continuous_io_to_channel( 39, &unit1, &channel1 ) );
 
-                            adc_continuous_handle_t     handle     = NULL;
+                            adc_unit_t    unit2;
+                            adc_channel_t channel2;
+                            ESP_ERROR_CHECK( adc_continuous_io_to_channel( 36, &unit2, &channel2 ) );
+
+                            adc_digi_pattern_config_t patterns[] {
+                                { adc_atten_t::ADC_ATTEN_DB_12,
+                                  static_cast< std::uint8_t >( channel1 ),
+                                  static_cast< std::uint8_t >( unit1 ),
+                                  adc_bitwidth_t::ADC_BITWIDTH_12 },
+#if 1
+                                { adc_atten_t::ADC_ATTEN_DB_12,
+                                  static_cast< std::uint8_t >( channel2 ),
+                                  static_cast< std::uint8_t >( unit2 ),
+                                  adc_bitwidth_t::ADC_BITWIDTH_12 },
+#endif
+                            };
+
+                            constexpr int samplesCount = 128;
+
+                            adc_continuous_handle_t     handle {};
                             adc_continuous_handle_cfg_t adc_config = {
-                                .max_store_buf_size = 512 * SOC_ADC_DIGI_RESULT_BYTES,
-                                .conv_frame_size    = 512 * SOC_ADC_DIGI_RESULT_BYTES,
-                                .flags              = {},
+                                .max_store_buf_size =
+                                samplesCount * SOC_ADC_DIGI_RESULT_BYTES * std::ranges::size( patterns ),
+                                .conv_frame_size =
+                                samplesCount * SOC_ADC_DIGI_RESULT_BYTES * std::ranges::size( patterns ),
+                                .flags = {},
                             };
                             ESP_ERROR_CHECK( adc_continuous_new_handle( &adc_config, &handle ) );
 
-                            adc_continuous_config_t config { .pattern_num    = 1,
-                                                             .adc_pattern    = &pattern,
+                            adc_continuous_config_t config { .pattern_num    = std::ranges::size( patterns ),
+                                                             .adc_pattern    = patterns,
                                                              .sample_freq_hz = samplingRate,
                                                              .conv_mode      = ADC_CONV_SINGLE_UNIT_1,
                                                              .format         = {} };
@@ -150,14 +168,14 @@ extern "C" int                      app_main() {
 
                             std::this_thread::sleep_for( 3s );
 
-                            auto mData = std::vector< adc_continuous_data_t >( 512 );
+                            std::array< adc_continuous_data_t, samplesCount * std::ranges::size( patterns ) > mData {};
 
-                            auto mValues = std::vector< std::int16_t >( 512 );
+                            std::array< std::int16_t, samplesCount > mValues {};
 
                             std::uint32_t samplesRead;
                             ESP_ERROR_CHECK(
-                            adc_continuous_read_parse( handle, mData.data(), 512, &samplesRead, 1000 ) );
-                            assert( samplesRead == 512 );
+                            adc_continuous_read_parse( handle, mData.data(), mData.size(), &samplesRead, 10000 ) );
+                            assert( samplesRead == mData.size() );
 
                             ESP_ERROR_CHECK( adc_continuous_stop( handle ) );
                             ESP_ERROR_CHECK( dac_cosine_stop( h ) );
@@ -166,11 +184,13 @@ extern "C" int                      app_main() {
 
                             std::println( "Main measure stop." );
 
-                            for ( int i = 0; i < samplesRead; ++i )
-                                if ( mData[ i ].valid )
-                                    mValues[ i ] = static_cast< std::int16_t >( mData[ i ].raw_data );
+                            auto toIt = mValues.begin();
+                            for ( int i = 0; i < mData.size(); ++i )
+                                if ( mData.at( i ).valid && mData.at( i ).channel == channel1 ) {
+                                    *toIt = static_cast< std::int16_t >( mData.at( i ).raw_data );
+                                    toIt++;
+                                }
 
-                            // std::ranges::fill( mValues, 150 );
                             std::span values( mValues );
                             std::println( "------mValues size: {}", mValues.size() );
 
@@ -182,8 +202,8 @@ extern "C" int                      app_main() {
                             std::println( "------Sending error: {}", e.what() );
                             transmitter->waitForDone();
                         } catch ( const std::exception & e ) { std::print( "------Sending error: {}\n", e.what() ); }
-                        using namespace std::chrono_literals;
-                        std::this_thread::sleep_for( 1s );
+                        // using namespace std::chrono_literals;
+                        // std::this_thread::sleep_for( 1s );
                     }
                 } );
 
